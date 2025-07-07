@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Callback</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Добро пожаловать!</h1>
+      <div class="user-info">
+        <img id="user-photo" src="https://via.placeholder.com/100" alt="User Photo" class="user-photo" />
+        <p>Имя: <span id="first-name">Иван</span></p>
+        <p>Фамилия: <span id="last-name">Иванов</span></p>
+        <p>Пользователь: <span id="username">@ivan</span></p>
+      </div>
+      <a href="/dashboard" class="btn">Перейти в приложение</a>
+    </div>
+
+    <script>
+      // Здесь, после того как будет авторизация и данные будут переданы через API
+      // Вставим данные на страницу
+      fetch('/callback')
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('first-name').textContent = data.first_name;
+          document.getElementById('last-name').textContent = data.last_name;
+          document.getElementById('username').textContent = data.username;
+          document.getElementById('user-photo').src = data.photo_url;
+        });
+    </script>
+  </body>
+</html>

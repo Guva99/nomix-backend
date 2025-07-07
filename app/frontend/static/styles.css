@@ -1,0 +1,81 @@
+/* General Styles */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f9;
+  }
+
+  .container {
+    max-width: 500px;
+    margin: 50px auto;
+    padding: 20px;
+    background-color: #fff;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    text-align: center;
+  }
+
+  h1 {
+    color: #333;
+  }
+
+  p {
+    font-size: 16px;
+    color: #555;
+  }
+
+  button,
+  a.btn {
+    background-color: #0088cc;
+    color: #fff;
+    border: none;
+    padding: 12px 24px;
+    font-size: 16px;
+    border-radius: 5px;
+    text-decoration: none;
+    cursor: pointer;
+    margin-top: 20px;
+    display: inline-block;
+  }
+
+  button:hover,
+  a.btn:hover {
+    background-color: #007bb5;
+  }
+
+  .spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3498db;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .user-info {
+    margin-top: 20px;
+  }
+
+  .user-photo {
+    border-radius: 50%;
+    width: 100px;
+    height: 100px;
+  }
+
+  .user-info p {
+    font-size: 18px;
+    margin: 10px 0;
+  }
+
+  #first-name,
+  #last-name,
+  #username {
+    font-weight: bold;
+  }
