@@ -13,7 +13,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-
+templates = Jinja2Templates(directory="/app/frontend/templates")
 # Подключаем роутеры
 app.include_router(auth.router)
 app.include_router(callback_router)
