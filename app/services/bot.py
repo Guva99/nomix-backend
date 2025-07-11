@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-WEBAPP_LINK = "https://t.me/NumixStartBot/nomix_ai"
+WEBAPP_LINK = "https://t.me/NomixAI_bot/nomix_ai"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received start command from {update.message.from_user.username}")
