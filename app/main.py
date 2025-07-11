@@ -6,6 +6,8 @@ from routers import auth
 from routers.callback import router as callback_router
 from services.bot import on_startup
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
+from fastapi.responses import HTMLResponse
 
 app = FastAPI()
 
@@ -28,6 +30,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-async def root():
-    return {"status": "ok"}
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    return templates.TemplateResponse("home.html", {"request": request})
