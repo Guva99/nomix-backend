@@ -13,15 +13,13 @@ WEBAPP_LINK = "https://t.me/NomixAI_bot/nomix_ai"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received start command from {update.message.from_user.username}")
-    await update.message.reply_text(
-        "Привет! Я бот Numix. Используй /login для входа."
-    )
+    await update.message.reply_text("Привет! Я бот Numix. Используй /login для входа.")
+    logger.info("Replied to /start command.")
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received login command from {update.message.from_user.username}")
-    await update.message.reply_text(
-        f"Чтобы авторизоваться через Telegram Web App, нажми:\n{WEBAPP_LINK}"
-    )
+    await update.message.reply_text(f"Чтобы авторизоваться через Telegram Web App, нажми:\n{WEBAPP_LINK}")
+    logger.info("Replied to /login command.")
 
 async def start_bot():
     bot = Application.builder().token(TOKEN).build()
