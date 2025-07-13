@@ -7,6 +7,7 @@ from routers import auth
 from routers.callback import router as callback_router
 from services.bot import on_startup
 from fastapi import Request
+import asyncio
 
 # Настройка логирования
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -21,7 +22,8 @@ app.include_router(callback_router)
 @app.on_event("startup")
 async def startup():
     logger.info("Starting bot and FastAPI app...")
-    await on_startup()
+    asyncio.create_task(on_startup())
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):

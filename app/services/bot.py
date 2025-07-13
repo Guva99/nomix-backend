@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 from telegram import Update
@@ -8,6 +9,8 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    logger.error("Telegram Bot Token is missing!")
 
 WEBAPP_LINK = "https://t.me/NomixAI_bot/nomix_ai"
 
@@ -26,8 +29,8 @@ async def start_bot():
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(CommandHandler("login", login))
     await bot.initialize()
-    await bot.start()
+    await bot.run_polling()
     logger.info("Bot started successfully.")
 
 async def on_startup():
-    await start_bot()
+    asyncio.create_task(start_bot())
