@@ -1,12 +1,7 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-    CallbackContext,
-)
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Настройка логирования
 logging.basicConfig(
@@ -70,3 +65,13 @@ class TelegramBot:
 
         update = Update.de_json(update_data, self.application.bot)
         await self.application.process_update(update)
+
+
+# Создаем экземпляр бота для использования в других модулях
+bot = TelegramBot()
+
+
+async def on_startup():
+    """Функция для запуска при старте FastAPI"""
+    webhook_url = f"https://ваш-домен/webhook"  # Замените на реальный URL
+    await bot.setup_webhook(webhook_url)
