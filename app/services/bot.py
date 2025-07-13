@@ -29,7 +29,7 @@ async def start_bot():
     bot.add_handler(CommandHandler("start", start))
     bot.add_handler(CommandHandler("login", login))
     await bot.initialize()
-    await bot.run_polling()
+    await asyncio.to_thread(bot.run_polling)
     logger.info("Bot started successfully.")
 
 async def on_startup():
