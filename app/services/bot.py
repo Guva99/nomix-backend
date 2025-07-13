@@ -14,23 +14,21 @@ if not TOKEN:
 
 WEBAPP_LINK = "https://t.me/NomixAI_bot/nomix_ai"
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received start command from {update.message.from_user.username}")
     await update.message.reply_text("Привет! Я бот Numix. Используй /login для входа.")
     logger.info("Replied to /start command.")
-
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received login command from {update.message.from_user.username}")
     await update.message.reply_text(f"Чтобы авторизоваться через Telegram Web App, нажми:\n{WEBAPP_LINK}")
     logger.info("Replied to /login command.")
 
-
 def run_polling_in_thread(bot):
+    import time
     # Этот метод будет запускать polling в синхронном режиме
-    bot.run_polling()
-
+    while True:
+        bot.idle()  # Пример использования long-polling с бесконечным циклом ожидания
 
 async def start_bot():
     bot = Application.builder().token(TOKEN).build()
@@ -40,11 +38,11 @@ async def start_bot():
 
     loop = asyncio.get_event_loop()
 
-    # Запускаем polling в отдельном потоке
-    await loop.run_in_executor(None, run_polling_in_thread, bot)
+    # Запускаем polling в другом потоке
+    # Используем run_coroutine_threadsafe для асинхронного запуска в новом потоке
+    asyncio.run_coroutine_threadsafe(run_polling_in_thread(bot), loop)
 
     logger.info("Bot started successfully.")
-
 
 async def on_startup():
     asyncio.create_task(start_bot())
