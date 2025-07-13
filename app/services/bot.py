@@ -25,8 +25,10 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("Replied to /login command.")
 
 def run_polling_in_thread(bot):
-    # Запуск polling в синхронном режиме
-    bot.run_polling()
+    # Новый цикл событий для дочернего потока
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)  # Устанавливаем новый цикл событий для потока
+    loop.run_until_complete(bot.run_polling())
 
 async def start_bot():
     bot = Application.builder().token(TOKEN).build()
@@ -36,7 +38,7 @@ async def start_bot():
 
     loop = asyncio.get_event_loop()
 
-    # Запуск polling в другом потоке с помощью run_in_executor
+    # Запускаем polling в другом потоке
     await loop.run_in_executor(None, run_polling_in_thread, bot)
 
     logger.info("Bot started successfully.")
