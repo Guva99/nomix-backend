@@ -25,10 +25,8 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("Replied to /login command.")
 
 def run_polling_in_thread(bot):
-    import time
-    # Этот метод будет запускать polling в синхронном режиме
-    while True:
-        bot.idle()  # Пример использования long-polling с бесконечным циклом ожидания
+    # Запуск polling в синхронном режиме
+    bot.run_polling()
 
 async def start_bot():
     bot = Application.builder().token(TOKEN).build()
@@ -38,9 +36,8 @@ async def start_bot():
 
     loop = asyncio.get_event_loop()
 
-    # Запускаем polling в другом потоке
-    # Используем run_coroutine_threadsafe для асинхронного запуска в новом потоке
-    asyncio.run_coroutine_threadsafe(run_polling_in_thread(bot), loop)
+    # Запуск polling в другом потоке с помощью run_in_executor
+    await loop.run_in_executor(None, run_polling_in_thread, bot)
 
     logger.info("Bot started successfully.")
 
