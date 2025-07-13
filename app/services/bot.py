@@ -1,47 +1,72 @@
-import asyncio
 import os
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    CallbackContext,
+)
 
-# Включаем логирование
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# Настройка логирования
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     logger.error("Telegram Bot Token is missing!")
+    raise ValueError("Telegram Bot Token is missing!")
 
 WEBAPP_LINK = "https://t.me/NomixAI_bot/nomix_ai"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received start command from {update.message.from_user.username}")
-    await update.message.reply_text("Привет! Я бот Numix. Используй /login для входа.")
-    logger.info("Replied to /start command.")
 
-async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received login command from {update.message.from_user.username}")
-    await update.message.reply_text(f"Чтобы авторизоваться через Telegram Web App, нажми:\n{WEBAPP_LINK}")
-    logger.info("Replied to /login command.")
+class TelegramBot:
+    def __init__(self):
+        self.application = None
 
-def run_polling_in_thread(bot):
-    # Новый цикл событий для дочернего потока
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)  # Устанавливаем новый цикл событий для потока
-    loop.run_until_complete(bot.run_polling())
+    async def initialize(self):
+        """Инициализация бота и обработчиков команд"""
+        self.application = Application.builder().token(TOKEN).build()
 
-async def start_bot():
-    bot = Application.builder().token(TOKEN).build()
-    bot.add_handler(CommandHandler("start", start))
-    bot.add_handler(CommandHandler("login", login))
-    await bot.initialize()
+        # Регистрация обработчиков команд
+        self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CommandHandler("login", self.login))
 
-    loop = asyncio.get_event_loop()
+        await self.application.initialize()
+        logger.info("Bot initialized")
 
-    # Запускаем polling в другом потоке
-    await loop.run_in_executor(None, run_polling_in_thread, bot)
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /start"""
+        logger.info(f"Received start command from {update.effective_user.username}")
+        await update.message.reply_text(
+            "Привет! Я бот Numix. Используй /login для входа."
+        )
 
-    logger.info("Bot started successfully.")
+    async def login(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /login"""
+        logger.info(f"Received login command from {update.effective_user.username}")
+        await update.message.reply_text(
+            f"Чтобы авторизоваться через Telegram Web App, нажми:\n{WEBAPP_LINK}"
+        )
 
-async def on_startup():
-    asyncio.create_task(start_bot())
+    async def setup_webhook(self, webhook_url: str):
+        """Установка вебхука"""
+        if not self.application:
+            await self.initialize()
+
+        await self.application.bot.set_webhook(
+            url=webhook_url,
+            drop_pending_updates=True
+        )
+        logger.info(f"Webhook set up at {webhook_url}")
+
+    async def process_update(self, update_data: dict):
+        """Обработка входящего обновления"""
+        if not self.application:
+            await self.initialize()
+
+        update = Update.de_json(update_data, self.application.bot)
+        await self.application.process_update(update)
