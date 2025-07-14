@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 # Передаем токен как аргумент или переменную окружения
 ARG GITHUB_TOKEN
-RUN git clone https://Billynill:${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app/frontend
+RUN git clone https://Guva99:${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app/frontend
 
 # Устанавливаем зависимости для Flutter
 RUN apt-get update && apt-get install -y \
