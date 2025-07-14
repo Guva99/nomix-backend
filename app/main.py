@@ -26,11 +26,23 @@ async def startup():
     logger.info("Starting bot and FastAPI app...")
     await on_startup()
 
+
 @app.post("/webhook")
 async def webhook(request: Request):
-    update_data = await request.json()
-    await bot.process_update(update_data)
-    return {"ok": True}
+    try:
+        update_data = await request.json()
+
+        # Базовая проверка формата обновления Telegram
+        if not isinstance(update_data, dict) or 'update_id' not in update_data:
+            logger.warning(f"Invalid update format: {update_data}")
+            return {"ok": False, "error": "Invalid update format"}
+
+        await bot.process_update(update_data)
+        return {"ok": True}
+
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"ok": False, "error": str(e)}
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):

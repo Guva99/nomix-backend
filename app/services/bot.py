@@ -60,11 +60,25 @@ class TelegramBot:
 
     async def process_update(self, update_data: dict):
         """Обработка входящего обновления"""
-        if not self.application:
-            await self.initialize()
+        try:
+            if not self.application:
+                await self.initialize()
 
-        update = Update.de_json(update_data, self.application.bot)
-        await self.application.process_update(update)
+            # Дополнительная проверка данных
+            if not isinstance(update_data, dict):
+                raise ValueError("Update data must be a dictionary")
+
+            update = Update.de_json(update_data, self.application.bot)
+
+            if not update:
+                raise ValueError("Failed to parse Telegram update")
+
+            await self.application.process_update(update)
+            return True
+
+        except Exception as e:
+            logger.error(f"Error processing update: {e}")
+            raise
 
 
 # Создаем экземпляр бота для использования в других модулях
