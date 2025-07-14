@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 from starlette.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from routers import auth
@@ -50,13 +50,9 @@ async def webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         return {"ok": False, "error": str(e)}
 
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    logger.info("Root endpoint accessed.")
-    # Возвращаем index.html из сборки Flutter
-    with open("frontend/build/web/index.html", encoding="utf-8") as f:
-        html = f.read()
-    return HTMLResponse(content=html)
+@app.get("/")
+async def serve_flutter_app():
+    return FileResponse("frontend/build/web/index.html")
 
 # Настройка CORS
 app.add_middleware(

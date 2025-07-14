@@ -9,6 +9,7 @@ services:
     env_file: .env  # Подключаем .env файл для переменных окружения
     volumes:
       - ./app:/app
+      - ./frontend/build/web:/app/frontend/build/web
     expose:
       - "8000"
     depends_on:

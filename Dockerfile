@@ -1,41 +1,43 @@
-FROM python:3.11-slim
+# Этап сборки Flutter
+FROM ubuntu:22.04 as flutter-builder
 
-WORKDIR /app
-ENV PYTHONPATH=/app
-
-# Устанавливаем необходимые зависимости
 RUN apt-get update && apt-get install -y \
     curl \
     git \
     unzip \
     xz-utils \
-    zip
+    zip \
+    clang \
+    cmake \
+    ninja-build \
+    pkg-config \
+    libgtk-3-dev
 
-# Клонируем репозиторий с использованием PAT от Billynill
-ARG GITHUB_TOKEN
-RUN git clone https://Billynill:${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app/frontend
-
-# Устанавливаем зависимости для Flutter
-RUN apt-get update && apt-get install -y \
-    curl \
-    unzip \
-    xz-utils \
-    zip
-
-# Устанавливаем Flutter
-RUN curl -fsSL https://storage.googleapis.com/download.flutter.io/flutter_linux_v3.7.9-stable.tar.xz | tar -xzC /opt
+# Установка Flutter
+RUN curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.19.5-stable.tar.xz | tar -xJ -C /opt
 ENV PATH="/opt/flutter/bin:${PATH}"
 
-# Собираем Flutter проект
-WORKDIR /app/frontend
-RUN flutter doctor
+# Клонирование приватного репозитория
+ARG GITHUB_TOKEN
+RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
+WORKDIR /app
+RUN flutter pub get
 RUN flutter build web --release
 
-# Копируем собранные файлы в папку для статики
-WORKDIR /app
-COPY --from=flutter-build /app/frontend/build/web /app/frontend/static
+# Основной образ
+FROM python:3.11-slim
 
-# Копируем основной бэкенд код
+WORKDIR /app
+ENV PYTHONPATH=/app
+
+# Копируем собранный фронтенд
+COPY --from=flutter-builder /app/build/web /app/frontend/build/web
+
+# Устанавливаем зависимости бекенда
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Копируем остальные файлы
 COPY . .
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
