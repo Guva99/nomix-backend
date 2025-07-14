@@ -21,8 +21,8 @@ ENV PATH="/opt/flutter/bin:${PATH}"
 ARG GITHUB_TOKEN
 RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
 WORKDIR /app
-RUN flutter pub get
-RUN flutter build web --release
+RUN flutter pub get --no-precompile --no-snapshot
+RUN flutter build web --release --no-sound-null-safety
 
 # Основной образ
 FROM python:3.11-slim

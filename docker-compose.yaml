@@ -17,6 +17,10 @@ services:
         condition: service_healthy
     networks:
       - app-network
+    deploy:
+      resources:
+        limits:
+          memory: 4g
 
   postgres:
     image: postgres:15-alpine
