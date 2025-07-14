@@ -1,6 +1,22 @@
 version: '3.9'
 
 services:
+  backend:
+    build:
+      context: .
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}  # Передаем GITHUB_TOKEN через build-args
+    env_file: .env  # Подключаем .env файл для переменных окружения
+    volumes:
+      - ./app:/app
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+
   postgres:
     image: postgres:15-alpine
     env_file: .env
@@ -14,21 +30,6 @@ services:
       retries: 5
     networks:
       - app-network
-
-  backend:
-    build: .
-    env_file: .env  # Подключаем .env файл для переменных окружения
-    volumes:
-      - ./app:/app
-    expose:
-      - "8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app-network
-    environment:
-      - GITHUB_TOKEN=${GITHUB_TOKEN}  # Передаем PAT из .env файла
 
   nginx:
     image: nginx:1.23-alpine
