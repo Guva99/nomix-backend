@@ -17,7 +17,7 @@ services:
 
   backend:
     build: .
-    env_file: .env
+    env_file: .env  # Подключаем .env файл для переменных окружения
     volumes:
       - ./app:/app
     expose:
@@ -27,6 +27,8 @@ services:
         condition: service_healthy
     networks:
       - app-network
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}  # Передаем PAT из .env файла
 
   nginx:
     image: nginx:1.23-alpine

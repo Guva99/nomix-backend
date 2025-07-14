@@ -9,21 +9,11 @@ RUN apt-get update && apt-get install -y \
     git \
     unzip \
     xz-utils \
-    zip \
-    openssh-client  # Устанавливаем клиент для SSH
+    zip
 
-# Копируем SSH ключи в контейнер
-# Убедитесь, что ваш приватный ключ находится в директории с Dockerfile
-COPY .ssh /root/.ssh
-
-# Устанавливаем правильные права для приватного ключа
-RUN chmod 600 /root/.ssh/id_rsa
-
-# Отключаем проверку подлинности хоста (если необходимо)
-RUN echo "StrictHostKeyChecking no" >> /root/.ssh/config
-
-# Клонируем репозиторий с фронтендом через SSH
-RUN git clone git@github.com:Guva99/nomix_flutter.git /app/frontend
+# Передаем токен как аргумент или переменную окружения
+ARG GITHUB_TOKEN
+RUN git clone https://your_username:${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app/frontend
 
 # Устанавливаем зависимости для Flutter
 RUN apt-get update && apt-get install -y \
