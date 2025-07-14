@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from starlette.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from routers import auth
 from routers.callback import router as callback_router
 from services.bot import bot, on_startup
@@ -15,7 +16,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Устанавливаем шаблоны для FastAPI (если понадобятся для других целей)
 templates = Jinja2Templates(directory="/app/frontend/templates")
+
+# Монтируем директорию для статики (собранные файлы Flutter)
+app.mount("/static", StaticFiles(directory="frontend/build/web"), name="static")
 
 # Подключаем роутеры
 app.include_router(auth.router)
@@ -47,7 +53,10 @@ async def webhook(request: Request):
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     logger.info("Root endpoint accessed.")
-    return templates.TemplateResponse("home.html", {"request": request})
+    # Возвращаем index.html из сборки Flutter
+    with open("frontend/build/web/index.html", encoding="utf-8") as f:
+        html = f.read()
+    return HTMLResponse(content=html)
 
 # Настройка CORS
 app.add_middleware(
