@@ -86,6 +86,7 @@ bot = TelegramBot()
 
 
 async def on_startup():
-    """Функция для запуска при старте FastAPI"""
-    webhook_url = f"https://mixfom2025.fvds.ru/webhook"  # Замените на реальный URL
-    await bot.setup_webhook(webhook_url)
+    bot = TelegramBot()
+    await bot.initialize()
+    await bot.application.start()
+    await bot.application.updater.start_polling()
