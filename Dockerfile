@@ -1,4 +1,3 @@
-# Этап сборки Flutter
 FROM ubuntu:22.04 as flutter-builder
 
 RUN apt-get update && apt-get install -y \
@@ -11,11 +10,15 @@ RUN apt-get update && apt-get install -y \
     cmake \
     ninja-build \
     pkg-config \
-    libgtk-3-dev
+    libgtk-3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Установка Flutter
 RUN curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.19.5-stable.tar.xz | tar -xJ -C /opt
 ENV PATH="/opt/flutter/bin:${PATH}"
+
+# Решаем проблему с безопасностью Git
+RUN git config --global --add safe.directory /opt/flutter
 
 # Клонирование приватного репозитория
 ARG GITHUB_TOKEN
