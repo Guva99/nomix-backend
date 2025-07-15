@@ -35,7 +35,7 @@ RUN rm -rf .dart_tool/
 
 # Установка зависимостей
 RUN flutter pub get && \
-    flutter build web --release --no-sound-null-safety
+    flutter build web --release
 
 # Основной образ
 FROM python:3.11-slim
