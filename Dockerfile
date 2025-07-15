@@ -31,7 +31,9 @@ RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
 WORKDIR /app
 
 # Очистка возможных кэшей
-RUN rm -rf .dart_tool/
+RUN rm -rf .dart_tool/ && \
+    flutter clean
+
 
 # Установка зависимостей
 RUN flutter pub get && \
