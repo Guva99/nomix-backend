@@ -37,7 +37,10 @@ RUN rm -rf .dart_tool/ && \
 
 # Установка зависимостей
 RUN flutter pub get && \
-    flutter build web --release
+    flutter build web --release \
+    --dart-define=FLUTTER_WEB_USE_SKIA=true \
+    --web-renderer canvaskit \
+    --no-tree-shake-icons
 
 # Основной образ
 FROM python:3.11-slim
