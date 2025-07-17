@@ -1,3 +1,4 @@
+# Шаг 1: Строим Flutter
 FROM ubuntu:22.04 as flutter-builder
 
 # Установка зависимостей
@@ -25,15 +26,10 @@ RUN flutter --version && dart --version
 ARG GITHUB_TOKEN
 RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
 WORKDIR /app
-COPY --from=flutter-builder /app/build/web /app/frontend/build/web
-
 
 # Очистка кэшей
 RUN rm -rf .dart_tool/ && \
     flutter clean
-
-# Установка переменных окружения
-ENV DART2JS_OPTIONS="--max-old-space-size=4096"
 
 # Установка зависимостей и сборка
 RUN flutter pub get
@@ -43,12 +39,16 @@ RUN flutter build web --release \
     --verbose
 RUN ls -la /app/build/web/
 
-# Основной образ
+# Шаг 2: Основной образ для Backend (FastAPI)
 FROM python:3.11-slim
 WORKDIR /app
-ENV PYTHONPATH=/app
+
+# Копируем из предыдущего контейнера с билдом Flutter
 COPY --from=flutter-builder /app/build/web /app/frontend/build/web
+
+# Установка зависимостей для Backend
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
