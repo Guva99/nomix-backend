@@ -8,6 +8,7 @@ from app.routers import auth
 from app.routers.callback import router as callback_router
 from app.services.bot import bot, on_startup
 from pathlib import Path
+from starlette.responses import HTMLResponse
 
 # Настройка логирования
 logging.basicConfig(
@@ -56,7 +57,7 @@ async def webhook(request: Request):
 @app.get("/{full_path:path}")
 async def flutter_route_fallback(full_path: str):
     try:
-        return FileResponse(FLUTTER_WEB_DIR / "index.html")
+        return HTMLResponse((FLUTTER_WEB_DIR / "index.html").read_text(), media_type="text/html")
     except FileNotFoundError:
         raise HTTPException(
             status_code=500,
