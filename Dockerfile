@@ -21,7 +21,10 @@ RUN git config --global --add safe.directory /opt/flutter && \
 
 # Клонирование репозитория с Flutter-проектом
 ARG GITHUB_TOKEN
-RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
+RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app && \
+    cd /app && \
+    git reset --hard && \
+    git pull origin main
 WORKDIR /app
 
 # Сборка Flutter-проекта
