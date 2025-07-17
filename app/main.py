@@ -25,7 +25,7 @@ FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
 templates = Jinja2Templates(directory="/app/frontend/templates")
 
 @app.get("/{full_path:path}")
-async def flutter_route_fallback(full_path: str, request: Request):
+async def flutter_route_fallback(full_path: str, request: Request):  # Здесь request - это параметр типа Request
     # Логируем полученные данные
     logger.info(f"Request received - Path: {full_path}, Query: {request.query_params}")
 
