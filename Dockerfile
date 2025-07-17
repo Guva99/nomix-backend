@@ -1,26 +1,22 @@
 FROM ubuntu:22.04 as flutter-builder
 
+# Установка только необходимых зависимостей для web-сборки
 RUN apt-get update && apt-get install -y \
     curl \
     git \
     unzip \
     xz-utils \
-    zip \
     clang \
-    cmake \
-    ninja-build \
-    pkg-config \
-    libgtk-3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка конкретной версии Flutter с нужным Dart SDK
+# Установка Flutter
 RUN curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.32.6-stable.tar.xz | tar -xJ -C /opt
 ENV PATH="/opt/flutter/bin:${PATH}"
 
-# Настройка окружения
+# Настройка окружения и предварительное кэширование web-зависимостей
 RUN git config --global --add safe.directory /opt/flutter && \
     flutter config --no-analytics && \
-    flutter precache
+    flutter precache --web
 
 # Проверка версий
 RUN flutter --version && dart --version
@@ -30,26 +26,26 @@ ARG GITHUB_TOKEN
 RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
 WORKDIR /app
 
-# Очистка возможных кэшей
+# Очистка кэшей
 RUN rm -rf .dart_tool/ && \
     flutter clean
 
+# Установка переменной окружения для увеличения памяти dart2js
+ENV DART2JS_OPTIONS="--max-old-space-size=4096"
 
-# Установка зависимостей
+# Сборка с оптимизациями
 RUN flutter pub get && \
     flutter build web --release \
     --dart-define=FLUTTER_WEB_USE_SKIA=true \
-    --no-tree-shake-icons
+    --no-tree-shake-icons \
+    --verbose
 
 # Основной образ
 FROM python:3.11-slim
-
 WORKDIR /app
 ENV PYTHONPATH=/app
-
 COPY --from=flutter-builder /app/build/web /app/frontend/build/web
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
