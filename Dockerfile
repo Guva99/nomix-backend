@@ -38,7 +38,9 @@ RUN flutter pub get && \
     flutter build web --release \
     --dart-define=FLUTTER_WEB_USE_SKIA=true \
     --no-tree-shake-icons \
-    --verbose
+    --verbose \
+
+RUN ls -la /app/build/web/
 
 # Основной образ
 FROM python:3.11-slim
