@@ -1,4 +1,6 @@
 import logging
+from urllib import request
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -10,6 +12,7 @@ from app.services.bot import bot, on_startup
 from pathlib import Path
 from starlette.responses import HTMLResponse
 from urllib.parse import unquote
+import urllib.parse
 
 # Настройка логирования
 logging.basicConfig(
@@ -23,6 +26,11 @@ FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
 
 # Устанавливаем шаблоны для FastAPI (если понадобятся для других целей)
 templates = Jinja2Templates(directory="/app/frontend/templates")
+
+tg_data = request.query_params.get('tgWebAppData')
+if tg_data:
+    decoded_data = urllib.parse.unquote(tg_data)  # Декодируем данные
+    logger.info(f"Decoded tgWebAppData: {decoded_data}")
 
 # Монтируем директорию для статики (собранные файлы Flutter)
 app.mount("/static", StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
@@ -58,10 +66,9 @@ async def webhook(request: Request):
 
 @app.get("/{full_path:path}")
 async def flutter_route_fallback(full_path: str, request: Request):
-    # Log the request for debugging
+    # Логируем полученные данные
     logger.info(f"Request received - Path: {full_path}, Query: {request.query_params}")
 
-    # Check if this is a Telegram Mini App request
     tg_params = {
         'tgWebAppData': request.query_params.get('tgWebAppData'),
         'tgWebAppVersion': request.query_params.get('tgWebAppVersion'),
@@ -70,10 +77,10 @@ async def flutter_route_fallback(full_path: str, request: Request):
     }
 
     if any(tg_params.values()):
-        logger.info("Telegram Mini App initialization detected")
-        logger.info(f"Telegram params: {tg_params}")
+        logger.info(f"Telegram Web App detected with params: {tg_params}")
+        # Распакуйте или используйте tgWebAppData по необходимости
 
-    # Always return the Flutter index.html
+    # Возвращаем основной HTML
     index_path = FLUTTER_WEB_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="Index file not found")
