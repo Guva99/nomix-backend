@@ -55,16 +55,30 @@ async def webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         return {"ok": False, "error": str(e)}
 
+
 @app.get("/{full_path:path}")
 async def flutter_route_fallback(full_path: str, request: Request):
-    logger.info(f"Request full path: {full_path}")
-    tg_web_app_data = request.query_params.get('tgWebAppData')
-    if tg_web_app_data:
-        # URL-декодируем tgWebAppData
-        decoded_data = unquote(tg_web_app_data)
-        logger.info(f"Received decoded tgWebAppData: {decoded_data}")
-    return HTMLResponse((FLUTTER_WEB_DIR / "index.html").read_text(), media_type="text/html")
+    # Log the request for debugging
+    logger.info(f"Request received - Path: {full_path}, Query: {request.query_params}")
 
+    # Check if this is a Telegram Mini App request
+    tg_params = {
+        'tgWebAppData': request.query_params.get('tgWebAppData'),
+        'tgWebAppVersion': request.query_params.get('tgWebAppVersion'),
+        'tgWebAppPlatform': request.query_params.get('tgWebAppPlatform'),
+        'tgWebAppThemeParams': request.query_params.get('tgWebAppThemeParams')
+    }
+
+    if any(tg_params.values()):
+        logger.info("Telegram Mini App initialization detected")
+        logger.info(f"Telegram params: {tg_params}")
+
+    # Always return the Flutter index.html
+    index_path = FLUTTER_WEB_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=404, detail="Index file not found")
+
+    return FileResponse(index_path)
 
 # Настройка CORS
 app.add_middleware(
