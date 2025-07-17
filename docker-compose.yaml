@@ -6,9 +6,7 @@ services:
       context: .
       args:
         GITHUB_TOKEN: ${GITHUB_TOKEN}  # Передаем GITHUB_TOKEN через build-args
-    env_file: .env  # Подключаем .env файл для переменных окружения
-    volumes:
-      - ./app:/app
+    env_file: .env
     expose:
       - "8000"
     depends_on:
