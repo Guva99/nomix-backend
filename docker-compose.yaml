@@ -5,10 +5,15 @@ services:
     build:
       context: .
       args:
-        GITHUB_TOKEN: ${GITHUB_TOKEN}  # Передаем GITHUB_TOKEN через build-args
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
     env_file: .env
     expose:
       - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,13 +42,15 @@ services:
     image: nginx:1.23-alpine
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./app/frontend/build/web:/var/www/flutter:ro  # Изменён путь для Flutter
       - ./app/frontend/static:/var/www/static:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
       - "80:80"
       - "443:443"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: always
     networks:
       - app-network
