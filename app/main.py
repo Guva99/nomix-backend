@@ -55,14 +55,18 @@ async def webhook(request: Request):
         return {"ok": False, "error": str(e)}
 
 @app.get("/{full_path:path}")
-async def flutter_route_fallback(full_path: str):
+async def flutter_route_fallback(full_path: str, request: Request):
     try:
+        tg_web_app_data = request.query_params.get('tgWebAppData')
+        if tg_web_app_data:
+            logger.info(f"Received tgWebAppData: {tg_web_app_data}")
         return HTMLResponse((FLUTTER_WEB_DIR / "index.html").read_text(), media_type="text/html")
     except FileNotFoundError:
         raise HTTPException(
             status_code=500,
             detail="Flutter web build not found. Rebuild the project."
         )
+
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
