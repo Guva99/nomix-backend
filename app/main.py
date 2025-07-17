@@ -53,8 +53,8 @@ async def webhook(request: Request):
         logger.error(f"Webhook error: {e}")
         return {"ok": False, "error": str(e)}
 
-@app.get("/")
-async def serve_flutter_app():
+@app.get("/{full_path:path}")
+async def flutter_route_fallback(full_path: str):
     try:
         return FileResponse(FLUTTER_WEB_DIR / "index.html")
     except FileNotFoundError:
