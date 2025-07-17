@@ -25,6 +25,8 @@ RUN flutter --version && dart --version
 ARG GITHUB_TOKEN
 RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
 WORKDIR /app
+COPY --from=flutter-builder /app/build/web /app/frontend/build/web
+
 
 # Очистка кэшей
 RUN rm -rf .dart_tool/ && \
