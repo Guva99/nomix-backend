@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.templating import Jinja2Templates
@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from routers import auth
 from routers.callback import router as callback_router
 from services.bot import bot, on_startup
+from pathlib import Path
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,6 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
 
 # Устанавливаем шаблоны для FastAPI (если понадобятся для других целей)
 templates = Jinja2Templates(directory="/app/frontend/templates")
@@ -52,8 +54,13 @@ async def webhook(request: Request):
 
 @app.get("/")
 async def serve_flutter_app():
-    return FileResponse("frontend/build/web/index.html")
-
+    try:
+        return FileResponse(FLUTTER_WEB_DIR / "index.html")
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail="Flutter web build not found. Rebuild the project."
+        )
 # Настройка CORS
 app.add_middleware(
     CORSMiddleware,
