@@ -9,6 +9,7 @@ from app.routers.callback import router as callback_router
 from app.services.bot import bot, on_startup
 from pathlib import Path
 from starlette.responses import HTMLResponse
+from urllib.parse import unquote
 
 # Настройка логирования
 logging.basicConfig(
@@ -59,7 +60,9 @@ async def flutter_route_fallback(full_path: str, request: Request):
     logger.info(f"Request full path: {full_path}")
     tg_web_app_data = request.query_params.get('tgWebAppData')
     if tg_web_app_data:
-        logger.info(f"Received tgWebAppData: {tg_web_app_data}")
+        # URL-декодируем tgWebAppData
+        decoded_data = unquote(tg_web_app_data)
+        logger.info(f"Received decoded tgWebAppData: {decoded_data}")
     return HTMLResponse((FLUTTER_WEB_DIR / "index.html").read_text(), media_type="text/html")
 
 
