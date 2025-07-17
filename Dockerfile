@@ -1,6 +1,6 @@
 FROM ubuntu:22.04 as flutter-builder
 
-# Установка только необходимых зависимостей для web-сборки
+# Установка зависимостей
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.32.6-stable.tar.xz | tar -xJ -C /opt
 ENV PATH="/opt/flutter/bin:${PATH}"
 
-# Настройка окружения и предварительное кэширование web-зависимостей
+# Настройка окружения
 RUN git config --global --add safe.directory /opt/flutter && \
     flutter config --no-analytics && \
     flutter precache --web
@@ -30,16 +30,15 @@ WORKDIR /app
 RUN rm -rf .dart_tool/ && \
     flutter clean
 
-# Установка переменной окружения для увеличения памяти dart2js
+# Установка переменных окружения
 ENV DART2JS_OPTIONS="--max-old-space-size=4096"
 
-# Сборка с оптимизациями
-RUN flutter pub get && \
-    flutter build web --release \
+# Установка зависимостей и сборка
+RUN flutter pub get
+RUN flutter build web --release \
     --dart-define=FLUTTER_WEB_USE_SKIA=true \
     --no-tree-shake-icons \
-    --verbose \
-
+    --verbose
 RUN ls -la /app/build/web/
 
 # Основной образ
