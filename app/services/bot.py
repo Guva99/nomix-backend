@@ -88,5 +88,5 @@ bot = TelegramBot()
 async def on_startup():
     bot = TelegramBot()
     await bot.initialize()
+    await bot.setup_webhook("https://mixfom2025.fvds.ru/webhook")
     await bot.application.start()
-    await bot.application.updater.start_polling()
