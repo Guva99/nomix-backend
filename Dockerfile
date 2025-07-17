@@ -1,7 +1,7 @@
-# Шаг 1: Строим Flutter
+# Этап 1: Сборка Flutter-проекта
 FROM ubuntu:22.04 as flutter-builder
 
-# Установка зависимостей
+# Установка зависимостей для Flutter
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -14,42 +14,41 @@ RUN apt-get update && apt-get install -y \
 RUN curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.32.6-stable.tar.xz | tar -xJ -C /opt
 ENV PATH="/opt/flutter/bin:${PATH}"
 
-# Настройка окружения
+# Настройка окружения Flutter
 RUN git config --global --add safe.directory /opt/flutter && \
     flutter config --no-analytics && \
     flutter precache --web
 
-# Проверка версий
-RUN flutter --version && dart --version
-
-# Клонирование репозитория
+# Клонирование репозитория с Flutter-проектом
 ARG GITHUB_TOKEN
 RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app
 WORKDIR /app
 
-# Очистка кэшей
-RUN rm -rf .dart_tool/ && \
-    flutter clean
-
-# Установка зависимостей и сборка
-RUN flutter pub get
-RUN flutter build web --release \
+# Сборка Flutter-проекта
+RUN flutter pub get && \
+    flutter build web --release \
     --dart-define=FLUTTER_WEB_USE_SKIA=true \
     --no-tree-shake-icons \
     --verbose
-RUN ls -la /app/build/web/
 
-# Шаг 2: Основной образ для Backend (FastAPI)
+# Этап 2: Финальный образ с FastAPI
 FROM python:3.11-slim
 WORKDIR /app
 
-# Копируем из предыдущего контейнера с билдом Flutter
+# Копируем собранный Flutter-проект
 COPY --from=flutter-builder /app/build/web /app/frontend/build/web
 
-# Установка зависимостей для Backend
+# Установка Python-зависимостей
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Копируем остальные файлы проекта
 COPY . .
+
+# Создаем директорию, если не существует (для надежности)
 RUN mkdir -p /app/frontend/build/web
+
+# Проверяем, что файлы на месте (можно удалить после тестирования)
+RUN ls -la /app/frontend/build/web
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
