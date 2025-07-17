@@ -23,7 +23,7 @@ FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
 templates = Jinja2Templates(directory="/app/frontend/templates")
 
 # Монтируем директорию для статики (собранные файлы Flutter)
-app.mount("/static", StaticFiles(directory="frontend/build/web"), name="static")
+app.mount("/static", StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
 
 # Подключаем роутеры
 app.include_router(auth.router)
