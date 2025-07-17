@@ -51,4 +51,4 @@ RUN mkdir -p /app/frontend/build/web
 # Проверяем, что файлы на месте (можно удалить после тестирования)
 RUN ls -la /app/frontend/build/web
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

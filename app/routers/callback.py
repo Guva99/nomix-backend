@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import hashlib
 import hmac
-from core.settings import settings
+from app.core.settings import settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory="frontend/templates")

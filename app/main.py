@@ -4,9 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from routers import auth
-from routers.callback import router as callback_router
-from services.bot import bot, on_startup
+from app.routers import auth
+from app.routers.callback import router as callback_router
+from app.services.bot import bot, on_startup
 from pathlib import Path
 
 # Настройка логирования
