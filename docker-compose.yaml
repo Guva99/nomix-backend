@@ -5,13 +5,10 @@ services:
     build:
       context: .
       args:
-        GITHUB_TOKEN: ${GITHUB_TOKEN}  # Передаем GITHUB_TOKEN через build-args
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
     env_file: .env
     expose:
       - "8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
       - app-network
     deploy:
@@ -25,11 +22,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     networks:
       - app-network
 
@@ -37,14 +29,13 @@ services:
     image: nginx:1.23-alpine
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./app/frontend/build/web:/var/www/flutter:ro  # Изменён путь
+      - ./app/frontend/build/web:/var/www/flutter:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
       - "80:80"
       - "443:443"
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     restart: always
     networks:
       - app-network
