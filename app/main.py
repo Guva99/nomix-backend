@@ -1,93 +1,81 @@
 import logging
 from pathlib import Path
-import urllib.parse
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from telegram import Update
 
 from app.routers import auth
 from app.routers.callback import router as callback_router
-from app.services.bot import bot, on_startup
-from telegram import Update
+from app.services.bot import bot     # ← singleton, уже создан
 
-# === Настройка логов ===
+logger = logging.getLogger(__name__)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
     level=logging.INFO,
 )
-logger = logging.getLogger(__name__)
 
-# === Инициализация FastAPI ===
+# ---------- FastAPI skeleton ----------
 app = FastAPI()
 FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
 templates = Jinja2Templates(directory="/app/frontend/templates")
 
-# === Монтируем Flutter-статик ===
-app.mount("/static", StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
-app.mount("/", StaticFiles(directory=str(FLUTTER_WEB_DIR), html=True), name="flutter")
+# static (сам Flutter-билд)
+app.mount("/static",  StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
+app.mount("/",        StaticFiles(directory=str(FLUTTER_WEB_DIR), html=True),
+          name="flutter")
 
-# === Подключаем роутеры ===
+# routers
 app.include_router(auth.router)
 app.include_router(callback_router)
 
-# === Хук на запуске ===
+# ---------- lifecycle ----------
 @app.on_event("startup")
-async def startup():
-    logger.info("Starting bot and FastAPI app...")
-
-    # 1) инициализируем ГЛОБАЛЬНЫЙ bot, а не создаём новый
+async def _on_startup() -> None:
+    logger.info("FastAPI startup → init bot + webhook")
     await bot.initialize()
-
-    # 2) регистрируем webhook (если ещё не поставлен)
     await bot.setup_webhook("https://mixfom2025.fvds.ru/webhook")
+    await bot.application.start()          # запускаем PTB-loop
 
-    # 3) НЕ вызываем polling, достаточно start()
-    await bot.application.start()
-
-# === Webhook для Telegram ===
+# ---------- Telegram webhook ----------
 @app.post("/webhook")
-async def webhook(request: Request):
+async def telegram_webhook(request: Request):
+    """
+    Получаем JSON от Telegram, перегоняем в `telegram.Update`
+    и скармливаем PTB.
+    """
     try:
-        update_data = await request.json()
-        logger.info(f"Received update: {update_data}")
-
-        update = Update.de_json(update_data, bot.bot)
-        await bot.process_update(update)
+        data = await request.json()
+        upd = Update.de_json(data, bot.application.bot)
+        await bot.process_update(upd)
         return {"ok": True}
+    except Exception as exc:               # noqa: BLE001
+        logger.exception("Webhook error")
+        return {"ok": False, "error": str(exc)}
 
-    except Exception as e:
-        logger.exception(f"Webhook error: {e}")
-        return {"ok": False, "error": str(e)}
+# ---------- SPA fall-back ----------
+@app.get("/{_:path}")
+async def spa_entry(request: Request):
+    """
+    Любой путь (кроме /webhook и /api) отдаём как index.html,
+    чтобы работал client-side‐router GoRouter.
+    """
+    # не лезем на энд-пойнты API
+    if request.url.path.startswith("/api"):
+        raise HTTPException(status_code=404)
 
-# === Fallback-маршрут Flutter SPA ===
-@app.get("/{full_path:path}")
-async def flutter_route_fallback(full_path: str, request: Request):
-    logger.info(f"Request received - Path: {full_path}, Query: {request.query_params}")
+    index = FLUTTER_WEB_DIR / "index.html"
+    if not index.exists():
+        raise HTTPException(500, "Flutter build missing")
+    return FileResponse(index)
 
-    tg_params = {
-        'tgWebAppData': request.query_params.get('tgWebAppData'),
-        'tgWebAppVersion': request.query_params.get('tgWebAppVersion'),
-        'tgWebAppPlatform': request.query_params.get('tgWebAppPlatform'),
-        'tgWebAppThemeParams': request.query_params.get('tgWebAppThemeParams')
-    }
-
-    if any(tg_params.values()):
-        logger.info(f"Telegram Web App detected with params: {tg_params}")
-
-    index_path = FLUTTER_WEB_DIR / "index.html"
-    if not index_path.exists():
-        raise HTTPException(status_code=404, detail="Index file not found")
-
-    return FileResponse(index_path)
-
-# === CORS ===
+# ---------- CORS ----------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

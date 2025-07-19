@@ -1,92 +1,84 @@
 import os
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from typing import Optional
 
-# Настройка логирования
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+from telegram import Update
+from telegram.ext import (
+    Application, ApplicationBuilder,
+    CommandHandler, ContextTypes
 )
+
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    logger.error("Telegram Bot Token is missing!")
-    raise ValueError("Telegram Bot Token is missing!")
+    raise RuntimeError("env TELEGRAM_BOT_TOKEN not set")
 
 WEBAPP_LINK = "https://t.me/NomixAI_bot/nomix_ai"
 
 
 class TelegramBot:
-    def __init__(self):
-        self.application = None
+    """
+    ОДИН единственный экземпляр бота на всё приложение.
+    """
+    def __init__(self) -> None:
+        self.application: Optional[Application] = None
 
-    async def initialize(self):
-        """Инициализация бота и обработчиков команд"""
-        self.application = Application.builder().token(TOKEN).build()
+    # ---------- infrastructure ---------- #
+    async def initialize(self) -> None:
+        if self.application:               # уже инициализировали
+            return
 
-        # Регистрация обработчиков команд
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CommandHandler("login", self.login))
+        self.application = (
+            ApplicationBuilder()
+            .token(TOKEN)
+            .build()
+        )
 
+        # Хэндлеры команд
+        self.application.add_handler(CommandHandler("start", self._cmd_start))
+        self.application.add_handler(CommandHandler("login", self._cmd_login))
+
+        # Обязательный шаг PTB-20
         await self.application.initialize()
-        logger.info("Bot initialized")
+        logger.info("Telegram bot initialised")
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /start"""
-        logger.info(f"Received start command from {update.effective_user.username}")
+    async def setup_webhook(self, url: str) -> None:
+        """
+        Ставим webhook, но только если он ещё не стоит.
+        """
+        await self.initialize()
+
+        info = await self.application.bot.get_webhook_info()
+        if info.url != url:
+            await self.application.bot.set_webhook(
+                url=url,
+                drop_pending_updates=True,
+            )
+            logger.info("Webhook configured: %s", url)
+        else:
+            logger.info("Webhook already points to %s – skip", url)
+
+    async def process_update(self, upd: Update) -> None:
+        """
+        Передаём апдейт в `telegram.ext.Application`.
+        """
+        await self.initialize()
+        await self.application.process_update(upd)
+
+    # ---------- command handlers ---------- #
+    async def _cmd_start(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        logger.info("CMD /start from %s", update.effective_user.id)
         await update.message.reply_text(
             "Привет! Я бот Numix. Используй /login для входа."
         )
 
-    async def login(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /login"""
-        logger.info(f"Received login command from {update.effective_user.username}")
+    async def _cmd_login(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        logger.info("CMD /login from %s", update.effective_user.id)
         await update.message.reply_text(
-            f"Чтобы авторизоваться через Telegram Web App, нажми:\n{WEBAPP_LINK}"
+            f"Чтобы авторизоваться через Telegram Web-App, нажми:\n{WEBAPP_LINK}"
         )
 
-    async def setup_webhook(self, webhook_url: str):
-        """Установка вебхука"""
-        if not self.application:
-            await self.initialize()
 
-        await self.application.bot.set_webhook(
-            url=webhook_url,
-            drop_pending_updates=True
-        )
-        logger.info(f"Webhook set up at {webhook_url}")
-
-    async def process_update(self, update_data: dict):
-        """Обработка входящего обновления"""
-        try:
-            if not self.application:
-                await self.initialize()
-
-            # Дополнительная проверка данных
-            if not isinstance(update_data, dict):
-                raise ValueError("Update data must be a dictionary")
-
-            update = Update.de_json(update_data, self.application.bot)
-
-            if not update:
-                raise ValueError("Failed to parse Telegram update")
-
-            await self.application.process_update(update)
-            return True
-
-        except Exception as e:
-            logger.error(f"Error processing update: {e}")
-            raise
-
-
-# Создаем экземпляр бота для использования в других модулях
+# экспортируем singleton
 bot = TelegramBot()
-
-
-async def on_startup():
-    bot = TelegramBot()
-    await bot.initialize()
-    await bot.setup_webhook("https://mixfom2025.fvds.ru/webhook")
-    await bot.application.start()
