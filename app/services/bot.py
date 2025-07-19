@@ -4,7 +4,7 @@ from typing import Optional
 
 from telegram import (
     Update,
-    ChatMenuButton,
+    MenuButtonWebApp,,
     WebAppInfo,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -40,8 +40,7 @@ class TelegramBot:
 
         # Устанавливаем WebApp-кнопку в главное меню
         await self.application.bot.set_chat_menu_button(
-            menu_button=ChatMenuButton(
-                menu_button_type="web_app",
+            menu_button=MenuButtonWebApp(
                 text="🚀 Открыть мини-приложение",
                 web_app=WebAppInfo(url=versioned_url),
             )
