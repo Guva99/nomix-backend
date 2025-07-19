@@ -4,7 +4,7 @@ from typing import Optional
 
 from telegram import (
     Update,
-    MenuButtonWebApp,,
+    MenuButtonWebApp,
     WebAppInfo,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
