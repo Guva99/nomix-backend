@@ -23,9 +23,13 @@ app = FastAPI()
 FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
 templates = Jinja2Templates(directory="/app/frontend/templates")
 
+app.mount(
+    "/",                                  # ←  https://site/… файлы Flutter
+    StaticFiles(directory=str(FLUTTER_WEB_DIR), html=True),
+    name="flutter",
+)
 # ───── only /static ─────
-app.mount("/static", StaticFiles(directory=str(FLUTTER_WEB_DIR / "static")),
-          name="static")
+app.mount("/static",StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
 
 # ───── routers ─────
 app.include_router(auth.router)
