@@ -7,36 +7,34 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from telegram import Update
 
-from app.routers import auth
-from app.routers.callback import router as callback_router
-from app.services.bot import bot     # <- уже создан singleton
+from app.services.bot import bot  # <- импорт синглтона TelegramBot
 
+# ——— Настройка логирования ———
 logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    format="%(asctime)s — %(levelname)s — %(name)s — %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
+# ——— Инициализация FastAPI ———
 app = FastAPI()
 
-FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
+# Каталог, куда собирается Flutter Web
+FLUTTER_WEB_DIR = Path("/frontend_build")  # соответствует FLUTTER_WEB_DIR в Dockerfile
 
-# ---- только статика (CSS/JS/ico и т.п.) ----
+# Монтируем статику из папки build/web
 app.mount("/static", StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
 
-# ---- ваши роутеры ----
-app.include_router(auth.router)
-app.include_router(callback_router)
-
-# ---- lifecycle ----
+# ——— Событие старта: инициализируем бота и настраиваем webhook ———
 @app.on_event("startup")
-async def _on_startup() -> None:
+async def on_startup() -> None:
     logger.info("FastAPI startup → init bot + webhook")
     await bot.initialize()
-    await bot.setup_webhook("https://mixfom2025.fvds.ru/webhook")
-    await bot.application.start()           # PTB-loop
+    await bot.setup_webhook()
+    # Запускаем внутренний цикл python-telegram-bot
+    await bot.application.start()
 
-# ---- Telegram webhook ----
+# ——— Обработчик Telegram webhook ———
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -44,23 +42,23 @@ async def telegram_webhook(request: Request):
         upd = Update.de_json(payload, bot.application.bot)
         await bot.process_update(upd)
         return {"ok": True}
-    except Exception as exc:                # noqa: BLE001
+    except Exception as exc:
         logger.exception("webhook error")
-        return {"ok": False, "error": str(exc)}
+        raise HTTPException(status_code=500, detail=str(exc))
 
-# ---- SPA fallback (отдаём index.html) ----
-@app.get("/{_:path}")
-async def spa_entry(request: Request):
-    if request.url.path.startswith("/api"):
+# ——— SPA fallback для Flutter (client-side routing) ———
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str, request: Request):
+    # Не обрабатываем API, статические файлы и webhook
+    if request.url.path.startswith(("/static", "/api", "/webhook")):
         raise HTTPException(status_code=404)
 
     index = FLUTTER_WEB_DIR / "index.html"
     if not index.exists():
-        raise HTTPException(500, "Flutter build missing")
-
+        raise HTTPException(status_code=500, detail="Flutter build missing")
     return FileResponse(index)
 
-# ---- CORS ----
+# ——— CORS ———
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
