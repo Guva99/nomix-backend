@@ -37,7 +37,15 @@ app.include_router(callback_router)
 @app.on_event("startup")
 async def startup():
     logger.info("Starting bot and FastAPI app...")
-    await on_startup()
+
+    # 1) инициализируем ГЛОБАЛЬНЫЙ bot, а не создаём новый
+    await bot.initialize()
+
+    # 2) регистрируем webhook (если ещё не поставлен)
+    await bot.setup_webhook("https://mixfom2025.fvds.ru/webhook")
+
+    # 3) НЕ вызываем polling, достаточно start()
+    await bot.application.start()
 
 # === Webhook для Telegram ===
 @app.post("/webhook")
