@@ -37,17 +37,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем остальной бэкенд
+# Копируем backend
 COPY . .
 
-# ⚠️ Копируем Flutter билд В ОБЩИЙ VOLUME (тот, который nginx использует)
-RUN mkdir -p /frontend_build && \
-    cp -r /app/frontend/build/web/* /frontend_build/
+# Копируем собранный frontend из flutter-builder этапа
+COPY --from=flutter-builder /app/build/web /frontend_build
 
-# Декларируем volume
-VOLUME ["/frontend_build"]
-
-# Лог (для отладки)
+# Лог для проверки
 RUN ls -la /frontend_build
+
+# Декларируем volume (тот что nginx использует)
+VOLUME ["/frontend_build"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
