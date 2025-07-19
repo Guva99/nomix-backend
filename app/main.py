@@ -5,12 +5,11 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.templating import Jinja2Templates
 from telegram import Update
 
 from app.routers import auth
 from app.routers.callback import router as callback_router
-from app.services.bot import bot
+from app.services.bot import bot     # <- уже создан singleton
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -21,37 +20,35 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 FLUTTER_WEB_DIR = Path("/app/frontend/build/web")
-templates = Jinja2Templates(directory="/app/frontend/templates")
 
+# ---- только статика (CSS/JS/ico и т.п.) ----
+app.mount("/static", StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
 
-# ───── only /static ─────
-app.mount("/static",StaticFiles(directory=str(FLUTTER_WEB_DIR)), name="static")
-
-# ───── routers ─────
+# ---- ваши роутеры ----
 app.include_router(auth.router)
 app.include_router(callback_router)
 
-# ───── lifecycle ─────
+# ---- lifecycle ----
 @app.on_event("startup")
-async def on_startup() -> None:
-    logger.info("startup → init bot + webhook")
+async def _on_startup() -> None:
+    logger.info("FastAPI startup → init bot + webhook")
     await bot.initialize()
     await bot.setup_webhook("https://mixfom2025.fvds.ru/webhook")
-    await bot.application.start()
+    await bot.application.start()           # PTB-loop
 
-# ───── Telegram webhook ─────
+# ---- Telegram webhook ----
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
-        js = await request.json()
-        upd = Update.de_json(js, bot.application.bot)
+        payload = await request.json()
+        upd = Update.de_json(payload, bot.application.bot)
         await bot.process_update(upd)
         return {"ok": True}
-    except Exception as e:                         # noqa: BLE001
+    except Exception as exc:                # noqa: BLE001
         logger.exception("webhook error")
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(exc)}
 
-# ───── SPA fall-back (GET) ─────
+# ---- SPA fallback (отдаём index.html) ----
 @app.get("/{_:path}")
 async def spa_entry(request: Request):
     if request.url.path.startswith("/api"):
@@ -63,7 +60,7 @@ async def spa_entry(request: Request):
 
     return FileResponse(index)
 
-# ───── CORS ─────
+# ---- CORS ----
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
