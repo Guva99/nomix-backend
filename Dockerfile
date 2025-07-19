@@ -17,10 +17,13 @@ RUN git config --global --add safe.directory /opt/flutter && \
     flutter precache --web
 
 ARG GITHUB_TOKEN
-RUN git clone https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app && \
+ARG  CACHE_BUST=2025-07-19
+
+RUN git clone --depth 1 --branch main \
+    https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app && \
     cd /app && \
-    git fetch --all && \
-    git reset --hard origin/main
+    git fetch --depth 1 origin main && \
+    git reset --hard FETCH_HEAD
 WORKDIR /app
 
 RUN flutter pub get && \
