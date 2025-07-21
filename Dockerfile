@@ -58,7 +58,7 @@ COPY app ./app
 COPY --from=flutter-builder /app/build/web /frontend_build
 
 # Этап 3: Финальная сборка
-FROM nginx:1.23-alpine
+FROM nginx:1.23-alpine as nginx
 
 # Копируем конфиг nginx
 COPY nginx.conf /etc/nginx/nginx.conf
