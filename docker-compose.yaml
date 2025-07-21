@@ -4,19 +4,24 @@ services:
   backend:
     build:
       context: .
+      target: backend
       args:
         GITHUB_TOKEN: ${GITHUB_TOKEN}
     env_file: .env
     expose:
       - "8000"
-    volumes:
-      - frontend_build:/frontend_build  # 👈 важно!
     networks:
       - app-network
     deploy:
       resources:
         limits:
+          cpus: '2'
           memory: 4G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   postgres:
     image: postgres:15-alpine
@@ -26,21 +31,32 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   nginx:
-    image: nginx:1.23-alpine
+    build:
+      context: .
+      target: nginx
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - frontend_build:/var/www/flutter  # 👈 монтируем тот же volume
     ports:
       - "80:80"
       - "443:443"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: always
     networks:
       - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
 
 networks:
   app-network:
@@ -48,4 +64,3 @@ networks:
 
 volumes:
   postgres_data:
-  frontend_build:  # 👈 обязательно объявить volume
