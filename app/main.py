@@ -56,9 +56,9 @@ async def telegram_webhook(request: Request):
         payload = await request.json()
         upd = Update.de_json(payload, bot.application.bot)
 
-        # Проверка версии для Mini App
-        if upd.web_app_data:
-            logger.info(f"WebApp version check for user {upd.effective_user.id}")
+        # Проверка версии для Mini App (исправленная версия)
+        if hasattr(upd, 'web_app_data') and upd.web_app_data is not None:
+            logger.info(f"WebApp version check for user {upd.effective_user.id if upd.effective_user else 'unknown'}")
 
         await bot.process_update(upd)
         return {"ok": True}
