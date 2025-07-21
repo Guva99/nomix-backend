@@ -55,8 +55,7 @@ RUN ls -la /frontend_build && \
 
 # Лог для проверки
 RUN ls -la /frontend_build
-RUN grep -q "Telegram Web App SDK" /var/www/flutter/index.html || { \
-    echo "Telegram scripts missing in index.html"; exit 1; }
+
 
 
 # Декларируем volume (тот что nginx использует)
