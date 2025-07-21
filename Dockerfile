@@ -16,59 +16,29 @@ RUN git config --global --add safe.directory /opt/flutter && \
     flutter config --no-analytics && \
     flutter precache --web
 
-ARG GITHUB_TOKEN
-ARG CACHE_BUST=2025-07-19
-
-RUN git clone --depth 1 --branch main \
-    https://${GITHUB_TOKEN}@github.com/Guva99/nomix_flutter.git /app && \
-    cd /app && \
-    git fetch --depth 1 origin main && \
-    git reset --hard FETCH_HEAD
+# Копируем исходный код Flutter
+COPY ./frontend /app
 WORKDIR /app
 
-# Увеличиваем кэш для зависимостей
-ENV PUB_CACHE="/tmp/flutter/.pub-cache"
-RUN mkdir -p ${PUB_CACHE} && \
-    flutter pub get && \
+# Установка зависимостей и сборка
+RUN flutter pub get && \
     flutter build web --release \
     --dart-define=FLUTTER_WEB_USE_SKIA=true \
     --no-tree-shake-icons \
-    --dart-define=FLUTTER_WEB_CANVASKIT_URL=/canvaskit/ \
     --verbose
 
-# Оптимизация ассетов
-RUN find /app/build/web -type f -name "*.js" -exec gzip -k {} \; && \
-    find /app/build/web -type f -name "*.css" -exec gzip -k {} \; && \
-    find /app/build/web -type f -name "*.html" -exec gzip -k {} \;
-
-# Этап 2: Финальный образ с FastAPI
+# Этап 2: Бэкенд
 FROM python:3.11-slim as backend
 
 WORKDIR /app
-
-# Установка зависимостей с кэшированием
 COPY requirements.txt .
-RUN pip install --no-cache-dir -U pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Копируем только нужные файлы для бэкенда
+RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
-
-# Копируем собранный frontend из flutter-builder этапа
 COPY --from=flutter-builder /app/build/web /frontend_build
 
-# Этап 3: Финальная сборка
-FROM nginx:1.23-alpine as nginx
-
-# Копируем конфиг nginx
+# Этап 3: Nginx
+FROM nginx:1.23-alpine
 COPY nginx.conf /etc/nginx/nginx.conf
-
-# Копируем статику из бэкенда
-COPY --from=backend /frontend_build /var/www/flutter
-
-# Создаем директорию для кэша nginx
-RUN mkdir -p /var/cache/nginx
-
+COPY --from=flutter-builder /app/build/web /var/www/flutter
 EXPOSE 80 443
-
 CMD ["nginx", "-g", "daemon off;"]
