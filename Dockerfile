@@ -53,7 +53,6 @@ RUN pip install --no-cache-dir -U pip && \
 
 # Копируем только нужные файлы для бэкенда
 COPY app ./app
-COPY migrations ./migrations
 COPY alembic.ini .
 
 # Копируем собранный frontend из flutter-builder этапа
