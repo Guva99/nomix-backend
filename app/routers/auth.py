@@ -7,7 +7,7 @@ router = APIRouter()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-@app.post("/login/")
+@router.post("/login/")
 async def login(data: TelegramUser):
     # Получаем токен с фронта (который присылает Telegram Web App)
     token = data.token
