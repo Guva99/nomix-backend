@@ -1,9 +1,10 @@
 from sqlalchemy import Column, Integer, String
+from pydantic import BaseModel
 from app.core.database import Base
 
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    telegram_id = Column(Integer, unique=True, index=True)
-    nickname = Column(String)
-    photo_url = Column(String)
+class TelegramUser(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    username: str
+    photo_url: str

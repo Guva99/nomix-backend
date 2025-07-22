@@ -12,7 +12,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+app = FastAPI(
+    title="Nomix API",
+    description="API для Nomix приложения",
+    version="1.0.4",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+
 
 # Разрешенные домены для CORS
 ALLOWED_ORIGINS = [
