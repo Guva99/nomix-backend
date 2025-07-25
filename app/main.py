@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
 from app.services.bot import bot
+from app.routers.auth import router
 
 # Настройка логирования
 logging.basicConfig(
@@ -27,7 +28,7 @@ ALLOWED_ORIGINS = [
     "https://mixfom2025.fvds.ru"
 ]
 
-
+app.include_router(router, prefix="/api/auth", tags=["auth"])
 @app.on_event("startup")
 async def on_startup() -> None:
     logger.info("Starting FastAPI application")
