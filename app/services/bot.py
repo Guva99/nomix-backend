@@ -19,7 +19,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("env TELEGRAM_BOT_TOKEN not set")
 
-WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/")
+WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
 class TelegramBot:
