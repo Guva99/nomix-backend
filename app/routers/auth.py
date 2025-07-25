@@ -1,5 +1,6 @@
 import hmac
 import hashlib
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,29 +11,26 @@ from app.models.users import TelegramUserCreate, UserResponse
 from app.core.database import get_db_session
 
 router = APIRouter()
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 
-def check_telegram_auth(data: dict, bot_token: str) -> bool:
-    # Telegram WebApp данные без auth_date и hash не проверяются — поэтому упрощаем
-    return True  # доверяем клиенту, хеш не проверяется (НЕ РЕКОМЕНДУЕТСЯ в проде)
+def generate_token() -> str:
+    return secrets.token_hex(16)
 
 
-@router.post("/login", response_model=UserResponse)
+@router.post("/login")
 async def login(
         user_data: TelegramUserCreate,
         db: AsyncSession = Depends(get_db_session)
 ):
-    # ⚠️ Предполагается, что hash не передаётся — доверяем фронту
-
     try:
         result = await db.execute(
             text("SELECT * FROM users WHERE id = :id"),
             {"id": user_data.id}
         )
-        existing_user = result.scalar_one_or_none()
+        existing_user = result.fetchone()
 
         if existing_user:
+            token = existing_user.token or generate_token()
             await db.execute(
                 text("""
                     UPDATE users
@@ -43,27 +41,45 @@ async def login(
                         token      = :token
                     WHERE id = :id
                 """),
-                user_data.model_dump()
+                {**user_data.model_dump(), "token": token}
             )
         else:
+            token = generate_token()
             await db.execute(
                 text("""
                     INSERT INTO users
                         (id, first_name, last_name, username, photo_url, token)
                     VALUES (:id, :first_name, :last_name, :username, :photo_url, :token)
                 """),
-                user_data.model_dump()
+                {**user_data.model_dump(), "token": token}
             )
 
         await db.commit()
+        return {"message": "success", "token": token}
 
-        return UserResponse(
-            id=user_data.id,
-            first_name=user_data.first_name,
-            username=user_data.username,
-            photo_url=user_data.photo_url
-        )
-
-    except Exception as e:
+    except Exception:
         await db.rollback()
         raise HTTPException(status_code=500, detail="Database error")
+
+
+@router.post("/validate")
+async def validate_token(
+        payload: dict,
+        db: AsyncSession = Depends(get_db_session)
+):
+    user_id = payload.get("id")
+    token = payload.get("token")
+
+    if not user_id or not token:
+        raise HTTPException(status_code=400, detail="Missing id or token")
+
+    result = await db.execute(
+        text("SELECT token FROM users WHERE id = :id"),
+        {"id": user_id}
+    )
+    stored = result.scalar_one_or_none()
+
+    if stored and stored == token:
+        return {"message": "valid"}
+
+    raise HTTPException(status_code=401, detail="invalid token")

@@ -26,15 +26,16 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
-
 # Разрешенные домены для CORS
 ALLOWED_ORIGINS = [
     "https://nomix-d6199.web.app",
     "https://mixfom2025.fvds.ru"
 ]
 
-app.include_router(login, prefix="/api/auth", tags=["auth"])
+# Роутеры
+app.include_router(login, prefix="/api/telegram", tags=["telegram"])
 app.include_router(callback, prefix="/api/telegram", tags=["telegram"])
+
 @app.on_event("startup")
 async def on_startup() -> None:
     logger.info("Starting FastAPI application")
@@ -58,7 +59,7 @@ async def on_startup() -> None:
         raise
 
 
-@app.post("/webhook")
+@app.post("/api/telegram/webhook", tags=["telegram"])
 async def telegram_webhook(request: Request):
     try:
         body = await request.body()
@@ -78,16 +79,7 @@ async def telegram_webhook(request: Request):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.get("/api/version")
-async def get_app_version():
-    return {
-        "version": "1.0.4",
-        "build_date": datetime.now().date().isoformat(),
-        "telegram_compatible": True
-    }
 
-
-# Удален SPA fallback и статика, так как фронтенд на Firebase
 
 app.add_middleware(
     CORSMiddleware,
