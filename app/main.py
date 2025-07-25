@@ -79,6 +79,9 @@ async def telegram_webhook(request: Request):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/webhook", include_in_schema=False)
+async def legacy_webhook(request: Request):
+    return await telegram_webhook(request)
 
 
 app.add_middleware(
