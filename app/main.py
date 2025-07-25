@@ -33,7 +33,7 @@ ALLOWED_ORIGINS = [
     "https://mixfom2025.fvds.ru"
 ]
 
-app.include_router(login, prefix="/api/auth", tags=["auth"])
+app.include_router(login, prefix="/api/telegram", tags=["telegram"])
 app.include_router(callback, prefix="/api/telegram", tags=["telegram"])
 @app.on_event("startup")
 async def on_startup() -> None:
