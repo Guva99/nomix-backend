@@ -6,6 +6,8 @@ from telegram import Update
 from app.services.bot import bot
 from app.routers.auth import router as login
 from app.routers.callback import router as callback
+from alembic.config import Config
+from alembic import command
 
 # Настройка логирования
 logging.basicConfig(
@@ -34,6 +36,8 @@ app.include_router(callback, prefix="/api/telegram", tags=["telegram"])
 @app.on_event("startup")
 async def on_startup() -> None:
     logger.info("Starting FastAPI application")
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
     try:
         await bot.initialize()
         webhook_info = await bot.application.bot.get_webhook_info()
