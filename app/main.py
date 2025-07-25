@@ -3,6 +3,8 @@ from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
+
+from app.core.database import engine, Base
 from app.services.bot import bot
 from app.routers.auth import router as login
 from app.routers.callback import router as callback
@@ -36,8 +38,13 @@ app.include_router(callback, prefix="/api/telegram", tags=["telegram"])
 @app.on_event("startup")
 async def on_startup() -> None:
     logger.info("Starting FastAPI application")
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
+    try:
+        # Проверка подключения к БД
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        logger.error(f"Database connection error: {e}")
+        raise
     try:
         await bot.initialize()
         webhook_info = await bot.application.bot.get_webhook_info()
