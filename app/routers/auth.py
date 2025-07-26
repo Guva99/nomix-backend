@@ -23,14 +23,22 @@ async def login(
         db: AsyncSession = Depends(get_db_session)
 ):
     try:
+        def convert_svg_to_jpg(url: str ) -> str :
+            if not url:
+                return None
+            return url.replace(".svg", ".jpg") if url.endswith(".svg") else url
+
+        photo_url_jpg = convert_svg_to_jpg(user_data.photo_url)
+
         result = await db.execute(
             text("SELECT * FROM users WHERE id = :id"),
             {"id": user_data.id}
         )
         existing_user = result.fetchone()
 
+        token = generate_token() if not existing_user else existing_user.token
+
         if existing_user:
-            token = existing_user.token or generate_token()
             await db.execute(
                 text("""
                     UPDATE users
@@ -41,21 +49,39 @@ async def login(
                         token      = :token
                     WHERE id = :id
                 """),
-                {**user_data.model_dump(), "token": token}
+                {
+                    "id": user_data.id,
+                    "first_name": user_data.first_name,
+                    "last_name": user_data.last_name,
+                    "username": user_data.username,
+                    "photo_url": photo_url_jpg,
+                    "token": token
+                }
             )
         else:
-            token = generate_token()
             await db.execute(
                 text("""
                     INSERT INTO users
                         (id, first_name, last_name, username, photo_url, token)
                     VALUES (:id, :first_name, :last_name, :username, :photo_url, :token)
                 """),
-                {**user_data.model_dump(), "token": token}
+                {
+                    "id": user_data.id,
+                    "first_name": user_data.first_name,
+                    "last_name": user_data.last_name,
+                    "username": user_data.username,
+                    "photo_url": photo_url_jpg,
+                    "token": token
+                }
             )
 
         await db.commit()
-        return {"message": "success", "token": token}
+
+        return {
+            "id": user_data.id,
+            "photoUrl": photo_url_jpg,
+            "token": token
+        }
 
     except Exception:
         await db.rollback()

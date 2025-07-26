@@ -12,14 +12,10 @@ class UserDB(Base):
     last_name = Column(String, nullable=True)
     username = Column(String, nullable=True)
     photo_url = Column(String, nullable=True)
-    token = Column(String, unique=True)
-    auth_date = Column(Integer)
-
 
 def to_camel(string: str) -> str:
     parts = string.split('_')
     return parts[0] + ''.join(word.capitalize() for word in parts[1:])
-
 
 class TelegramUserCreate(BaseModel):
     id: int
@@ -27,9 +23,6 @@ class TelegramUserCreate(BaseModel):
     last_name: Optional[str] = Field(None, alias="lastName")
     username: Optional[str]
     photo_url: Optional[str] = Field(None, alias="photoUrl")
-    token: str
-    auth_date: int = Field(..., alias="authDate")
-    hash: str
 
     class Config:
         alias_generator = to_camel
@@ -42,6 +35,7 @@ class UserResponse(BaseModel):
     first_name: str = Field(..., alias="firstName")
     username: Optional[str]
     photo_url: Optional[str] = Field(None, alias="photoUrl")
+    token: str
 
     class Config:
         alias_generator = to_camel
