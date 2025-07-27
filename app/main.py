@@ -7,7 +7,6 @@ from telegram import Update
 from app.core.database import engine, Base
 from app.services.bot import bot
 from app.routers.auth import router as login
-from app.routers.callback import router as callback
 from app.routers.data import router as data
 from alembic.config import Config
 from alembic import command
@@ -35,7 +34,6 @@ ALLOWED_ORIGINS = [
 
 # Роутеры
 app.include_router(login, prefix="/api/telegram", tags=["telegram"])
-app.include_router(callback, prefix="/api/telegram", tags=["telegram"])
 app.include_router(data, prefix="/api/data", tags=["Database"])
 
 
