@@ -34,6 +34,9 @@ async def get_avatar_url(user_id: int) -> str:
         # Берем самую большую версию первой фотографии
         photo = photos.photos[0][-1]
         file = await bot.get_file(photo.file_id)
+        file_path = file.file_path
+        if file_path.startswith("https"):
+            return file_path
 
         # Возвращаем ссылку на фото
         return f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
