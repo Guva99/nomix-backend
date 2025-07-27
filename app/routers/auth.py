@@ -51,7 +51,7 @@ async def login(
                     "photo_url": photo_url_jpg,
                 }
             )
-            token = existing_user["token"]
+            token = existing_user.token
         else:
             token = generate_token()
             await db.execute(
@@ -80,6 +80,10 @@ async def login(
             "token": token
         }
 
-    except Exception:
+
+    except Exception as e:
         await db.rollback()
+        import logging
+        logging.error(f"Login error: {e}")
         raise HTTPException(status_code=500, detail="Database error")
+
