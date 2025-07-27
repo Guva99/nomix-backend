@@ -8,6 +8,7 @@ from telegram import (
     WebAppInfo,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    Bot
 )
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -21,6 +22,24 @@ if not TOKEN:
 
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
+
+async def get_avatar_url(user_id: int) -> str:
+    try:
+        bot = Bot(token= TOKEN)
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+
+        if photos.total_count == 0:
+            return None
+
+        # Берем самую большую версию первой фотографии
+        photo = photos.photos[0][-1]
+        file = await bot.get_file(photo.file_id)
+
+        # Возвращаем ссылку на фото
+        return f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+    except Exception as e:
+        logger.error(f"Error fetching avatar for user {user_id}: {e}")
+        return None
 
 class TelegramBot:
     """Singleton-обёртка вокруг python-telegram-bot v20"""
