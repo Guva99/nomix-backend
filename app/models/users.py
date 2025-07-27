@@ -2,12 +2,12 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Integer, String
 from app.core.database import Base
-
+from sqlalchemy import BigInteger
 
 class UserDB(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(BigInteger, primary_key=True, index=True)
     first_name = Column(String)
     last_name = Column(String, nullable=True)
     username = Column(String, nullable=True)
