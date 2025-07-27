@@ -1,13 +1,9 @@
-import hmac
-import hashlib
-import secrets
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-import os
-import urllib.parse
 
+import urllib.parse
+from app.utils.auth import generate_token
 
 from app.models.users import TelegramUserCreate, UserResponse
 from app.core.database import get_db_session
@@ -15,11 +11,7 @@ from app.core.database import get_db_session
 router = APIRouter()
 
 
-def generate_token() -> str:
-    return secrets.token_hex(16)
 
-
-@router.post("/login")
 @router.post("/login")
 async def login(
     user_data: TelegramUserCreate,
