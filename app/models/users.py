@@ -12,6 +12,7 @@ class UserDB(Base):
     last_name = Column(String, nullable=True)
     username = Column(String, nullable=True)
     photo_url = Column(String, nullable=True)
+    token = Column(String, unique=True, nullable=False)
 
 def to_camel(string: str) -> str:
     parts = string.split('_')

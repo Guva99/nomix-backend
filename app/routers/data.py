@@ -5,7 +5,7 @@ from app.core.database import get_db_session
 
 router = APIRouter()
 
-@router.get("/user/data")
+@router.get("/user")
 async def get_user_data(
     id: int = Query(...),
     token: str = Query(...),
