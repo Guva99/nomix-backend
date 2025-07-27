@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 import os
+import urllib.parse
+
 
 from app.models.users import TelegramUserCreate, UserResponse
 from app.core.database import get_db_session
@@ -23,10 +25,11 @@ async def login(
         db: AsyncSession = Depends(get_db_session)
 ):
     try:
-        def convert_svg_to_jpg(url: str ) -> str :
+        def convert_svg_to_jpg(url: str) -> str:
             if not url:
-                return None
-            return url.replace(".svg", ".jpg") if url.endswith(".svg") else url
+                return ""
+            decoded = urllib.parse.unquote(url)
+            return decoded.replace(".svg", ".jpg") if decoded.endswith(".svg") else decoded
 
         photo_url_jpg = convert_svg_to_jpg(user_data.photo_url)
 
