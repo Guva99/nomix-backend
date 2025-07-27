@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Nomix API",
     description="API для Nomix приложения",
-    version="1.0.4",
+    version="1.0.5",
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
