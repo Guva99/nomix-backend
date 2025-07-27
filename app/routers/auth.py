@@ -51,7 +51,7 @@ async def login(
                     "photo_url": photo_url_jpg,
                 }
             )
-            token = existing_user.token
+            token = existing_user["token"]
         else:
             token = generate_token()
             await db.execute(
