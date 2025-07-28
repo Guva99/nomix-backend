@@ -25,24 +25,36 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
-async def get_avatar_base64(user_id: int) -> str:
+async def get_avatar_base64(user_id: int) -> str :
     try:
         bot = Bot(token=TOKEN)
         photos = await bot.get_user_profile_photos(user_id, limit=1)
         if photos.total_count == 0:
             return None
 
-        file = await bot.get_file(photos.photos[0][-1].file_id)
-        url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+        # Берём самый большой размер
+        file_obj = await bot.get_file(photos.photos[0][-1].file_id)
+        path = file_obj.file_path  # может быть "photos/file_0.jpg" или полный URL
 
+        # Правильно формируем URL
+        if path.startswith("http"):
+            url = path
+        else:
+            url = f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+
+        # Скачиваем
         async with httpx.AsyncClient() as client:
             resp = await client.get(url)
             if resp.status_code != 200:
+                logging.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
                 return None
+
+            # Кодируем в Base64
             encoded = base64.b64encode(resp.content).decode("utf-8")
             return f"data:image/jpeg;base64,{encoded}"
+
     except Exception as e:
-        logging.error(f"[get_avatar_base64] Failed to fetch avatar for {user_id}: {e}")
+        logging.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
         return None
 
 class TelegramBot:
