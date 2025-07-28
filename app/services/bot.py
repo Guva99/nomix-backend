@@ -1,6 +1,5 @@
 import os
 import logging
-from typing import Optional
 import base64
 import httpx
 
@@ -12,7 +11,13 @@ from telegram import (
     InlineKeyboardMarkup,
     Bot
 )
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes
+)
 
 # ——— Настройка логирования ———
 logger = logging.getLogger(__name__)
@@ -25,43 +30,40 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
-async def get_avatar_base64(user_id: int) -> str :
+async def get_avatar_base64(user_id: int) -> str:
     try:
         bot = Bot(token=TOKEN)
         photos = await bot.get_user_profile_photos(user_id, limit=1)
         if photos.total_count == 0:
             return None
 
-        # Берём самый большой размер
         file_obj = await bot.get_file(photos.photos[0][-1].file_id)
-        path = file_obj.file_path  # может быть "photos/file_0.jpg" или полный URL
+        path = file_obj.file_path
 
-        # Правильно формируем URL
+        # Формируем корректный URL
         if path.startswith("https://"):
             url = path
         else:
             url = f"https://api.telegram.org/file/bot{TOKEN}/{path}"
 
-        # Скачиваем
         async with httpx.AsyncClient() as client:
             resp = await client.get(url)
             if resp.status_code != 200:
-                logging.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
+                logger.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
                 return None
 
-            # Кодируем в Base64
             encoded = base64.b64encode(resp.content).decode("utf-8")
             return f"data:image/jpeg;base64,{encoded}"
-
     except Exception as e:
-        logging.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
+        logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
         return None
+
 
 class TelegramBot:
     """Singleton-обёртка вокруг python-telegram-bot v20"""
 
     def __init__(self) -> None:
-        self.application: Optional[Application] = None
+        self.application: Application = None
 
     async def initialize(self) -> None:
         if self.application:
@@ -70,20 +72,10 @@ class TelegramBot:
         # Создаём и конфигурируем приложение PTB
         self.application = ApplicationBuilder().token(TOKEN).build()
 
-        # Версионированный URL для cache-busting
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-
-        # Устанавливаем WebApp-кнопку в главное меню
-        await self.application.bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(
-                text="🚀 Открыть мини-приложение",
-                web_app=WebAppInfo(url=versioned_url),
-            )
-        )
-
-        # Регистрируем команды
+        # Регистрируем команду /start и WebApp-кнопку
         self.application.add_handler(CommandHandler("start", self._cmd_start))
-        self.application.add_handler(CommandHandler("login", self._cmd_login))
+        # Регистрируем обработчик нажатий на кнопки меню
+        self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
 
         # Инициализируем внутренние механизмы библиотеки
         await self.application.initialize()
@@ -105,23 +97,50 @@ class TelegramBot:
         await self.initialize()
         await self.application.process_update(upd)
 
-    # ——— Хендлеры команд ———
+    # ——— Построение меню ———
+    def _build_menu(self) -> InlineKeyboardMarkup:
+        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+        menu = [
+            [InlineKeyboardButton(
+                text="📱 Открыть приложение",
+                web_app=WebAppInfo(url=versioned_url)
+            )],
+            [
+                InlineKeyboardButton(text="📈 Детальная статистика", callback_data="stats"),
+                InlineKeyboardButton(text="🧾 Отправить чек", callback_data="send_receipt"),
+            ],
+        ]
+        return InlineKeyboardMarkup(menu)
 
+    # ——— Хендлер команды /start ———
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         logger.info("/start from %s", upd.effective_user.id)
-        await upd.message.reply_text("Привет! Я бот Nomix. Используй /login для входа.")
+        text = (
+            "Привет! Я Nomix, твой помощник по учёту трат. "
+            "Чтобы продолжить, выбери одну из услуг ниже:"
+        )
+        await upd.message.reply_text(text, reply_markup=self._build_menu())
 
-    async def _cmd_login(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        logger.info("/login from %s", upd.effective_user.id)
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-        button = InlineKeyboardButton(
-            text="🚀 Открыть мини-приложение",
-            web_app=WebAppInfo(url=versioned_url),
-        )
-        keyboard = InlineKeyboardMarkup([[button]])
-        await upd.message.reply_text(
-            "Нажми на кнопку, чтобы открыть мини-приложение:", reply_markup=keyboard
-        )
+    # ——— Обработчик нажатий на кнопки ———
+    async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        query = upd.callback_query
+        await query.answer()
+
+        if query.data == "stats":
+            await query.message.reply_text(
+                "Эта опция ещё в разработке.",
+                reply_markup=self._build_menu()
+            )
+        elif query.data == "send_receipt":
+            await query.message.reply_text(
+                "Пришли фото чека, и я разберу его по полочкам 🧮",
+                reply_markup=self._build_menu()
+            )
+        else:
+            await query.message.reply_text(
+                "Выбери одну из опций:",
+                reply_markup=self._build_menu()
+            )
 
 # Экспортируем синглтон
 bot = TelegramBot()
