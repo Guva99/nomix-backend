@@ -123,7 +123,7 @@ class TelegramBot:
         chat_id = upd.effective_chat.id
 
         # ✅ Отправляем локальный GIF как анимацию
-        with open("assets/welcome.gif", "rb") as gif:
+        with open("asset/welcome.gif", "rb") as gif:
             await ctx.bot.send_animation(
                 chat_id=chat_id,
                 animation=gif,
