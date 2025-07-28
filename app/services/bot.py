@@ -31,7 +31,6 @@ async def get_avatar_url(user_id: int) -> str:
         if photos.total_count == 0:
             return None
 
-        # Берем самую большую версию первой фотографии
         photo = photos.photos[0][-1]
         file = await bot.get_file(photo.file_id)
         file_path = file.file_path
