@@ -2,6 +2,7 @@ import os
 import logging
 import base64
 import httpx
+import json
 
 from telegram import (
     Update,
@@ -16,7 +17,9 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
-    ContextTypes
+    MessageHandler,
+    ContextTypes,
+    filters
 )
 
 # ——— Настройка логирования ———
@@ -30,6 +33,7 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
+
 async def get_avatar_base64(user_id: int) -> str:
     try:
         bot = Bot(token=TOKEN)
@@ -39,8 +43,8 @@ async def get_avatar_base64(user_id: int) -> str:
 
         file_obj = await bot.get_file(photos.photos[0][-1].file_id)
         path = file_obj.file_path
-
         url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+
         async with httpx.AsyncClient() as client:
             resp = await client.get(url)
             if resp.status_code != 200:
@@ -49,6 +53,7 @@ async def get_avatar_base64(user_id: int) -> str:
 
             encoded = base64.b64encode(resp.content).decode("utf-8")
             return f"data:image/jpeg;base64,{encoded}"
+
     except Exception as e:
         logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
         return None
@@ -64,10 +69,9 @@ class TelegramBot:
         if self.application:
             return
 
-        # Создаём и конфигурируем приложение PTB
         self.application = ApplicationBuilder().token(TOKEN).build()
 
-        # Устанавливаем укороченную WebApp-кнопку в меню чата
+        # WebApp кнопка в меню
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         await self.application.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
@@ -76,9 +80,10 @@ class TelegramBot:
             )
         )
 
-        # Регистрируем команду /start и обработчик нажатий
+        # Хендлеры
         self.application.add_handler(CommandHandler("start", self._cmd_start))
         self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
+        self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
 
         await self.application.initialize()
         logger.info("Telegram bot initialized with short menu button text")
@@ -117,23 +122,23 @@ class TelegramBot:
         return InlineKeyboardMarkup(buttons)
 
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        # text = ("Привет! Я Nomix — твой помощник по учёту трат. "
-        #         "Выбери услугу:")
-        # await upd.message.reply_text(text, reply_markup=self._build_menu())
         chat_id = upd.effective_chat.id
+        try:
+            with open("asset/welcome.gif", "rb") as gif:
+                await ctx.bot.send_animation(
+                    chat_id=chat_id,
+                    animation=gif,
+                    caption="Привет! Я Nomix — твой помощник по учёту трат 🧮"
+                )
+        except FileNotFoundError:
+            await ctx.bot.send_message(chat_id=chat_id, text="Привет! Я Nomix — твой помощник по учёту трат 🧮")
 
-        # ✅ Отправляем локальный GIF как анимацию
-        with open("asset/welcome.gif", "rb") as gif:
-            await ctx.bot.send_animation(
-                chat_id=chat_id,
-                animation=gif,
-                caption="Привет! Я Nomix — твой помощник по учёту трат 🧮"
-            )
-            await ctx.bot.send_message(
-                chat_id=chat_id,
-                text="Выбери опцию:",
-                reply_markup=self._build_menu()
-            )
+        await ctx.bot.send_message(
+            chat_id=chat_id,
+            text="Выбери опцию:",
+            reply_markup=self._build_menu()
+        )
+
     async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
         await query.answer()
@@ -152,6 +157,56 @@ class TelegramBot:
                 "Выбери опцию:",
                 reply_markup=self._build_menu()
             )
+
+    async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            user_id = upd.effective_user.id
+            photo = upd.message.photo[-1]
+            file = await ctx.bot.get_file(photo.file_id)
+
+            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+            await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
+
+            # Отправка в backend
+            async with httpx.AsyncClient() as client:
+                resp = await client.post("https://mixfom2025.fvds.ru/api/process-check", json={
+                    "file_url": file_url,
+                    "user_id": user_id
+                })
+
+            if resp.status_code != 200:
+                await upd.message.reply_text("❌ Произошла ошибка при обработке чека.")
+                return
+
+            data = resp.json()
+            raw_result = data.get("result")
+
+            # Пробуем распарсить JSON от GPT
+            try:
+                result = json.loads(raw_result)
+            except json.JSONDecodeError:
+                await upd.message.reply_text("❌ Ответ от GPT не является валидным JSON.")
+                return
+
+            if not result.get("is_receipt", False):
+                reason = result.get("reason", "Не удалось определить, что на изображении.")
+                await upd.message.reply_text(f"🚫 Это не чек.\nПричина: {reason}")
+                return
+
+            # Выводим краткую информацию о чеке
+            store = result.get("store", "неизвестный магазин")
+            total = result.get("total", "?")
+            date = result.get("date", "")
+            time = result.get("time", "")
+            await upd.message.reply_text(
+                f"✅ Чек из *{store}*\n🗓 {date} {time}\n💰 Сумма: {total}₽",
+                parse_mode="Markdown"
+            )
+
+        except Exception as e:
+            logger.exception("Ошибка при обработке фото")
+            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.")
+
 
 # Экспортируем синглтон
 bot = TelegramBot()
