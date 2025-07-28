@@ -175,16 +175,27 @@ class TelegramBot:
                 })
 
             if resp.status_code != 200:
+                logger.error(f"[BOT] Ошибка от backend: {resp.status_code}, response: {resp.text}")
                 await upd.message.reply_text("❌ Произошла ошибка при обработке чека.")
                 return
 
-            data = resp.json()
-            raw_result = data.get("result")
+            try:
+                data = resp.json()
+            except Exception as e:
+                logger.exception("[BOT] Не удалось распарсить JSON от backend")
+                await upd.message.reply_text("❌ Backend вернул невалидный JSON.")
+                return
 
-            # Пробуем распарсить JSON от GPT
+            raw_result = data.get("result")
+            if not raw_result:
+                logger.error("[BOT] Пустой result от backend")
+                await upd.message.reply_text("❌ Пустой результат от сервера.")
+                return
+
             try:
                 result = json.loads(raw_result)
             except json.JSONDecodeError:
+                logger.error(f"[BOT] Невалидный JSON от GPT: {raw_result}")
                 await upd.message.reply_text("❌ Ответ от GPT не является валидным JSON.")
                 return
 
@@ -193,7 +204,6 @@ class TelegramBot:
                 await upd.message.reply_text(f"🚫 Это не чек.\nПричина: {reason}")
                 return
 
-            # Выводим краткую информацию о чеке
             store = result.get("store", "неизвестный магазин")
             total = result.get("total", "?")
             date = result.get("date", "")
