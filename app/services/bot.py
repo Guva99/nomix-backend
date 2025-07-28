@@ -37,7 +37,7 @@ async def get_avatar_base64(user_id: int) -> str :
         path = file_obj.file_path  # может быть "photos/file_0.jpg" или полный URL
 
         # Правильно формируем URL
-        if path.startswith("http"):
+        if path.startswith("https://"):
             url = path
         else:
             url = f"https://api.telegram.org/file/bot{TOKEN}/{path}"
