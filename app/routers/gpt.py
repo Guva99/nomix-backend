@@ -6,7 +6,7 @@ from app.models.checkPhoto import PhotoPayload
 from app.services.GPT import analyze_receipt_from_bytes, last_check_store
 router = APIRouter()
 
-@router.post("/api/process-check")
+@router.post("/process-check")
 async def process_check(payload: PhotoPayload):
     async with httpx.AsyncClient() as client:
         resp = await client.get(payload.file_url)
