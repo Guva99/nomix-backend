@@ -71,7 +71,7 @@ class TelegramBot:
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         await self.application.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
-                text="🚀 Открыть",
+                text="📱 Отрыть приложение",
                 web_app=WebAppInfo(url=versioned_url),
             )
         )
@@ -104,7 +104,7 @@ class TelegramBot:
         buttons = []
         if "app" not in exclude:
             buttons.append([InlineKeyboardButton(
-                text="🚀 Открыть",
+                text="📱 Отрыть приложение",
                 web_app=WebAppInfo(url=versioned_url)
             )])
         row = []
