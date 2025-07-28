@@ -1,11 +1,13 @@
 import os
-import openai
 import base64
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
 load_dotenv()
-openai.api_key = os.getenv("OPEN_AI_API")
+
+# Создаём клиента
+client = AsyncOpenAI(api_key=os.getenv("OPEN_AI_API"))
 
 # Твой промпт
 PROMPT = """
@@ -83,8 +85,8 @@ PROMPT = """
 async def analyze_receipt_from_bytes(image_bytes: bytes) -> str:
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4o",
+    response = await client.chat.completions.create(
+        model="gpt-4-vision-preview",
         messages=[
             {
                 "role": "system",
@@ -104,6 +106,8 @@ async def analyze_receipt_from_bytes(image_bytes: bytes) -> str:
         max_tokens=2000
     )
 
-    return response.choices[0].message["content"]
+    return response.choices[0].message.content
 
+
+# (опционально) если ты используешь последнее заведение как кеш
 last_check_store = {}
