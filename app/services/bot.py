@@ -30,7 +30,7 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
-async def get_avatar_base64(user_id: int) -> str | None:
+async def get_avatar_base64(user_id: int) -> str:
     try:
         bot = Bot(token=TOKEN)
         photos = await bot.get_user_profile_photos(user_id, limit=1)
@@ -58,17 +58,30 @@ class TelegramBot:
     """Singleton-обёртка вокруг python-telegram-bot v20"""
 
     def __init__(self) -> None:
-        self.application: Application | None = None
+        self.application: Application = None
 
     async def initialize(self) -> None:
         if self.application:
             return
 
+        # Создаём и конфигурируем приложение PTB
         self.application = ApplicationBuilder().token(TOKEN).build()
+
+        # Устанавливаем укороченную WebApp-кнопку в меню чата
+        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+        await self.application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="🚀 Открыть",
+                web_app=WebAppInfo(url=versioned_url),
+            )
+        )
+
+        # Регистрируем команду /start и обработчик нажатий
         self.application.add_handler(CommandHandler("start", self._cmd_start))
         self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
+
         await self.application.initialize()
-        logger.info("Telegram bot initialized")
+        logger.info("Telegram bot initialized with short menu button text")
 
     async def setup_webhook(self) -> None:
         await self.initialize()
@@ -85,39 +98,32 @@ class TelegramBot:
         await self.application.process_update(upd)
 
     def _build_menu(self, exclude: list[str] = None) -> InlineKeyboardMarkup:
-        """Построение меню с возможностью исключить опции"""
         if exclude is None:
             exclude = []
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         buttons = []
-        # Always include open app
         if "app" not in exclude:
             buttons.append([InlineKeyboardButton(
-                text="📱 Открыть приложение",
+                text="🚀 Открыть",
                 web_app=WebAppInfo(url=versioned_url)
             )])
-        # Statistics and receipt row, include only those not excluded
         row = []
         if "stats" not in exclude:
-            row.append(InlineKeyboardButton(text="📈 Детальная статистика", callback_data="stats"))
+            row.append(InlineKeyboardButton(text="📈 Статистика", callback_data="stats"))
         if "send_receipt" not in exclude:
-            row.append(InlineKeyboardButton(text="🧾 Отправить чек", callback_data="send_receipt"))
+            row.append(InlineKeyboardButton(text="🧾 Чек", callback_data="send_receipt"))
         if row:
             buttons.append(row)
         return InlineKeyboardMarkup(buttons)
 
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        logger.info("/start from %s", upd.effective_user.id)
-        text = (
-            "Привет! Я Nomix, твой помощник по учёту трат."
-            " Чтобы продолжить, выбери одну из услуг ниже:"
-        )
+        text = ("Привет! Я Nomix — твой помощник по учёту трат. "
+                "Выбери услугу:")
         await upd.message.reply_text(text, reply_markup=self._build_menu())
 
     async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
         await query.answer()
-
         if query.data == "stats":
             await query.message.reply_text(
                 "Эта опция ещё в разработке.",
@@ -129,9 +135,8 @@ class TelegramBot:
                 reply_markup=self._build_menu(exclude=["send_receipt"])
             )
         else:
-            # на случай других callback_data
             await query.message.reply_text(
-                "Выбери одну из опций:",
+                "Выбери опцию:",
                 reply_markup=self._build_menu()
             )
 
