@@ -169,7 +169,7 @@ class TelegramBot:
 
             # Отправка в backend
             async with httpx.AsyncClient() as client:
-                resp = await client.post("https://mixfom2025.fvds.ru/api/process-check", json={
+                resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={
                     "file_url": file_url,
                     "user_id": user_id
                 })
