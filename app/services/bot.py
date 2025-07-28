@@ -1,6 +1,8 @@
 import os
 import logging
 from typing import Optional
+import base64
+import httpx
 
 from telegram import (
     Update,
@@ -23,24 +25,24 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
-async def get_avatar_url(user_id: int) -> str:
+async def get_avatar_base64(user_id: int) -> str:
     try:
-        bot = Bot(token= TOKEN)
+        bot = Bot(token=TOKEN)
         photos = await bot.get_user_profile_photos(user_id, limit=1)
-
         if photos.total_count == 0:
             return None
 
-        photo = photos.photos[0][-1]
-        file = await bot.get_file(photo.file_id)
-        file_path = file.file_path
-        if file_path.startswith("https"):
-            return file_path
+        file = await bot.get_file(photos.photos[0][-1].file_id)
+        url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
 
-        # Возвращаем ссылку на фото
-        return f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+            encoded = base64.b64encode(resp.content).decode("utf-8")
+            return f"data:image/jpeg;base64,{encoded}"
     except Exception as e:
-        logger.error(f"Error fetching avatar for user {user_id}: {e}")
+        logging.error(f"[get_avatar_base64] Failed to fetch avatar for {user_id}: {e}")
         return None
 
 class TelegramBot:
