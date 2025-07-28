@@ -117,10 +117,23 @@ class TelegramBot:
         return InlineKeyboardMarkup(buttons)
 
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        text = ("Привет! Я Nomix — твой помощник по учёту трат. "
-                "Выбери услугу:")
-        await upd.message.reply_text(text, reply_markup=self._build_menu())
+        # text = ("Привет! Я Nomix — твой помощник по учёту трат. "
+        #         "Выбери услугу:")
+        # await upd.message.reply_text(text, reply_markup=self._build_menu())
+        chat_id = upd.effective_chat.id
 
+        # ✅ Отправляем локальный GIF как анимацию
+        with open("assets/welcome.gif", "rb") as gif:
+            await ctx.bot.send_animation(
+                chat_id=chat_id,
+                animation=gif,
+                caption="Привет! Я Nomix — твой помощник по учёту трат 🧮"
+            )
+            await ctx.bot.send_message(
+                chat_id=chat_id,
+                text="Выбери опцию:",
+                reply_markup=self._build_menu()
+            )
     async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
         await query.answer()
