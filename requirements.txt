@@ -9,4 +9,4 @@ pydantic-settings
 starlette
 jinja2==3.1.2
 openai==1.31.0
-httpx==0.27.0
+httpx
