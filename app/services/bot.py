@@ -186,11 +186,12 @@ class TelegramBot:
         query = upd.callback_query
         await query.answer()
         if query.data == "stats":
-            await query.message.reply_text("\u042d\u0442\u0430 \u043e\u043f\u0446\u0438\u044f \u0435\u0449\u0451 \u0432 \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0435.", reply_markup=self._build_menu(exclude=["stats"]))
+            await query.message.reply_text("Эта опция ещё в разработке.", reply_markup=self._build_menu(exclude=["stats"]))
         elif query.data == "send_receipt":
-            await query.message.reply_text("\u041f\u0440\u0438\u0448\u043b\u0438 \u0444\u043e\u0442\u043e \u0447\u0435\u043a\u0430, \u0438 \u044f \u0440\u0430\u0437\u0431\u0435\u0440\u0443 \u0435\u0433\u043e \u043f\u043e \u043f\u043e\u043b\u043e\u0447\u043a\u0430\u043c \ud83e\uddfe", reply_markup=self._build_menu(exclude=["send_receipt"]))
+            await query.message.reply_text("Пришли фото чека, и я разберу его по полочкам 🧮", reply_markup=self._build_menu(exclude=["send_receipt"]))
         else:
-            await query.message.reply_text("\u0412\u044b\u0431\u0435\u0440\u0438 \u043e\u043f\u0446\u0438\u044e:", reply_markup=self._build_menu())
+            await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
+
 
     async def handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await upd.message.reply_text("📝 Я получил ваше сообщение!")
