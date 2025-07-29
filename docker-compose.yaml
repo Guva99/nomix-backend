@@ -10,7 +10,11 @@ services:
     expose:
       - "8000"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_RETRY_DELAY: ${DATABASE_RETRY_DELAY}
+      DATABASE_MAX_RETRIES: ${DATABASE_MAX_RETRIES}
     restart: unless-stopped
     networks:
       - app-network
@@ -30,6 +34,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD}
     networks:
       - app-network
 

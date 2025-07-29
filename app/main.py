@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,25 +43,31 @@ app.include_router(gpt, prefix="/api/bot", tags=["GPT"])
 
 @app.on_event("startup")
 async def on_startup():
-    max_retries = 5
-    retry_delay = 3
+    max_retries = int(os.getenv("DATABASE_MAX_RETRIES", "10"))
+    retry_delay = int(os.getenv("DATABASE_RETRY_DELAY", "5"))
 
     # Подключение к БД с повторами
     for attempt in range(max_retries):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            break
+                logger.info("✅ Database connection established successfully")
+                break
         except Exception as e:
             if attempt == max_retries - 1:
-                logger.critical(f"Failed to connect to DB after {max_retries} attempts")
+                logger.critical(f"❌ Failed to connect to DB after {max_retries} attempts")
                 raise
-            logger.warning(f"DB connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
+            logger.warning(f"⚠️ DB connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
             await asyncio.sleep(retry_delay)
 
     # Инициализация бота
-    await bot.initialize()
-    await bot.setup_webhook()
+    try:
+        await bot.initialize()
+        await bot.setup_webhook()
+        logger.info("🤖 Bot initialized successfully")
+    except Exception as e:
+        logger.critical(f"❌ Bot initialization failed: {e}")
+        raise
 
 
 @app.post("/api/telegram/webhook")
