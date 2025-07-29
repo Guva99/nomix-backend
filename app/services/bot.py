@@ -192,6 +192,9 @@ class TelegramBot:
         else:
             await query.message.reply_text("\u0412\u044b\u0431\u0435\u0440\u0438 \u043e\u043f\u0446\u0438\u044e:", reply_markup=self._build_menu())
 
+    async def handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        await upd.message.reply_text("📝 Я получил ваше сообщение!")
+
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             user_id = upd.effective_user.id
