@@ -10,6 +10,12 @@ router = APIRouter()
 async def process_check(payload: PhotoPayload):
     async with httpx.AsyncClient() as client:
         resp = await client.get(payload.file_url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=400, detail="Не удалось скачать изображение")
+
+        if not resp.headers.get("Content-Type", "").startswith("image/"):
+            raise HTTPException(status_code=400, detail="URL не указывает на изображение")
+
         image_bytes = resp.content
 
     result = await analyze_receipt_from_bytes(image_bytes)

@@ -164,7 +164,11 @@ class TelegramBot:
             photo = upd.message.photo[-1]
             file = await ctx.bot.get_file(photo.file_id)
 
-            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+            path = file.file_path
+            if path.startswith("https://"):
+                file_url = path  # если уже полный
+            else:
+                file_url = f"https://api.telegram.org/file/bot{TOKEN}/{path}"
             await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
 
             # Отправка в backend
