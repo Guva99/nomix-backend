@@ -127,6 +127,7 @@ class TelegramBot:
         self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self.application.add_handler(MessageHandler(filters.TEXT, self._handle_message))
+        self.application.add_handler(CallbackQueryHandler(self._on_callback_confirm_save, pattern="^confirm_save$"))
 
         await self.application.initialize()
         logger.info("Telegram bot initialized with short menu button text")
@@ -183,6 +184,36 @@ class TelegramBot:
 
     async def _handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await upd.message.reply_text("📝 Я получил ваше сообщение!")
+
+    async def _on_callback_confirm_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        query = upd.callback_query
+        await query.answer()
+
+        user_id = query.from_user.id
+        token = os.getenv("BOT_INTERNAL_TOKEN")  # Можно просто подставить "секретный" токен если вызываешь с backend-а
+
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"https://mixfom2025.fvds.ru/api/last-check", params={"user_id": user_id})
+                if resp.status_code != 200:
+                    await query.message.reply_text("❌ Не удалось получить последний чек.")
+                    return
+
+                last_check = resp.json()["result"]
+
+                save_resp = await client.post(
+                    "https://mixfom2025.fvds.ru/api/save-check",
+                    json={**last_check, "user_id": user_id}
+                )
+
+                if save_resp.status_code != 200:
+                    await query.message.reply_text("❌ Не удалось сохранить чек.")
+                    return
+
+            await query.message.reply_text("✅ Чек успешно сохранён!")
+        except Exception:
+            logger.exception("Ошибка при сохранении чека")
+            await query.message.reply_text("🚫 Произошла ошибка при сохранении.")
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
