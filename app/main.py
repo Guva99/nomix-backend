@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
-
+import json
 from app.core.database import engine, Base
 from app.services.bot import bot
 from app.routers.auth import router as login
@@ -62,29 +62,26 @@ async def on_startup() -> None:
         raise
 
 
-@app.post("/api/telegram/webhook", tags=["telegram"])
+@app.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
-        body = await request.body()
-        logger.debug(f"Incoming webhook: {body.decode()[:200]}...")
+        update_data = await request.json()
+        logger.debug(f"Received update: {update_data}")
 
-        payload = await request.json()
-        upd = Update.de_json(payload, bot.application.bot)
+        # Создаем объект Update
+        update = Update.de_json(update_data, bot.application.bot)
+        if not update:
+            logger.error("Failed to parse update")
+            return {"ok": False, "error": "Invalid update data"}
 
-        if hasattr(upd, 'web_app_data') and upd.web_app_data is not None:
-            user_id = upd.effective_user.id if upd.effective_user else 'unknown'
-            logger.info(f"WebApp event from user {user_id}")
-
-        await bot.process_update(upd)
+        await bot.process_update(update)
         return {"ok": True}
-    except Exception as exc:
-        logger.exception("Webhook processing failed")
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@app.post("/webhook", include_in_schema=False)
-async def legacy_webhook(request: Request):
-    return await telegram_webhook(request)
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON received")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    except Exception as e:
+        logger.exception("Error processing update")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 app.add_middleware(
