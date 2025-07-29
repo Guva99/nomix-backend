@@ -33,6 +33,14 @@ WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/t
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
 
+async def process_update(self, update: Update):
+    try:
+        # Ваша логика обработки
+        await update.message.reply_text("Принято!")
+    except Exception as e:
+        logger.error(f"Error processing update {update.update_id}: {e}")
+        raise
+
 async def get_avatar_base64(user_id: int) -> str:
     try:
         bot = Bot(token=TOKEN)
@@ -128,6 +136,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("start", self._cmd_start))
         self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
+        self.application.add_handler(MessageHandler(filters.TEXT, self.handle_message))
 
         await self.application.initialize()
         logger.info("Telegram bot initialized with short menu button text")

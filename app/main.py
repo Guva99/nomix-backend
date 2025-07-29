@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 from telegram import Update
 import json
 from app.core.database import engine, Base
@@ -73,23 +74,50 @@ async def on_startup():
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
-        update_data = await request.json()
-        logger.debug(f"Received update: {update_data}")
+        # Получаем сырые данные для логирования
+        raw_body = await request.body()
+        logger.info(f"Raw webhook data: {raw_body.decode()}")
+
+        try:
+            update_data = await request.json()
+        except json.JSONDecodeError as je:
+            logger.error(f"JSON decode error: {je}")
+            return JSONResponse(
+                content={"ok": False, "error": "Invalid JSON"},
+                status_code=400
+            )
+
+        # Валидация обязательных полей
+        if not update_data.get('update_id'):
+            logger.error("Missing update_id in payload")
+            return JSONResponse(
+                content={"ok": False, "error": "Missing update_id"},
+                status_code=400
+            )
 
         # Создаем объект Update
-        update = Update.de_json(update_data, bot.application.bot)
-        if not update:
-            logger.error("Failed to parse update")
-            return {"ok": False, "error": "Invalid update data"}
+        try:
+            update = Update.de_json(update_data, bot.application.bot)
+            if not update:
+                raise ValueError("Empty update object")
+        except Exception as e:
+            logger.error(f"Update parsing error: {e}")
+            return JSONResponse(
+                content={"ok": False, "error": "Invalid update format"},
+                status_code=400
+            )
 
-        await bot.process_update(update)
-        return {"ok": True}
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON received")
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        # Обработка update
+        try:
+            await bot.process_update(update)
+            return {"ok": True}
+        except Exception as e:
+            logger.error(f"Update processing error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
     except Exception as e:
-        logger.exception("Error processing update")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Unexpected error in webhook")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/health")
