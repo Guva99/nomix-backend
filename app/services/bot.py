@@ -202,7 +202,7 @@ class TelegramBot:
                 last_check = resp.json()["result"]
 
                 save_resp = await client.post(
-                    "https://mixfom2025.fvds.ru/api/save-check",
+                    "https://mixfom2025.fvds.ru/api/gpt/save-check",
                     json={**last_check, "user_id": user_id}
                 )
 
