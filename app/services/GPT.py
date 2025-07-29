@@ -1,7 +1,9 @@
 import os
 import base64
+import io
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from PIL import Image
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -9,7 +11,7 @@ load_dotenv()
 # Создаём клиента
 client = AsyncOpenAI(api_key=os.getenv("OPEN_AI_API"))
 
-# Твой промпт
+# Промпт
 PROMPT = """
 Ты получаешь **изображение**, предположительно содержащее **товарный чек**. Твоя задача — определить его содержание и вернуть результат в **строго заданном формате JSON**. 
 
@@ -83,8 +85,19 @@ PROMPT = """
 """
 
 async def analyze_receipt_from_bytes(image_bytes: bytes) -> str:
+    try:
+        # 🔁 Конвертируем изображение в JPEG (без прозрачности)
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        jpeg_buffer = io.BytesIO()
+        image.save(jpeg_buffer, format="JPEG", quality=90)
+        image_bytes = jpeg_buffer.getvalue()
+    except Exception as e:
+        raise RuntimeError(f"Image conversion error: {e}")
+
+    # Кодируем в base64
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
+    # Отправка в GPT
     response = await client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -108,6 +121,5 @@ async def analyze_receipt_from_bytes(image_bytes: bytes) -> str:
 
     return response.choices[0].message.content
 
-
-# (опционально) если ты используешь последнее заведение как кеш
+# Кеш последнего магазина (если нужно)
 last_check_store = {}
