@@ -13,8 +13,9 @@ async def process_check(payload: PhotoPayload):
         if resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Не удалось скачать изображение")
 
-        if not resp.headers.get("Content-Type", "").startswith("image/"):
-            raise HTTPException(status_code=400, detail="URL не указывает на изображение")
+        content_type = resp.headers.get("Content-Type", "").lower()
+        if "image" not in content_type and "octet-stream" not in content_type:
+            raise HTTPException(status_code=400, detail=f"Некорректный тип данных: {content_type}")
 
         image_bytes = resp.content
 
