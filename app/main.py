@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
@@ -40,26 +41,26 @@ app.include_router(gpt, prefix="/api/bot", tags=["GPT"])
 
 
 @app.on_event("startup")
-async def on_startup() -> None:
-    logger.info("Starting FastAPI application")
-    try:
-        # Проверка подключения к БД
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        logger.error(f"Database connection error: {e}")
-        raise
-    try:
-        await bot.initialize()
-        webhook_info = await bot.application.bot.get_webhook_info()
-        logger.info(f"Current webhook info: {webhook_info}")
+async def on_startup():
+    max_retries = 5
+    retry_delay = 3
 
-        await bot.setup_webhook()
-        await bot.application.start()
-        logger.info("Bot initialized successfully")
-    except Exception as e:
-        logger.critical(f"Bot initialization failed: {e}")
-        raise
+    # Подключение к БД с повторами
+    for attempt in range(max_retries):
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.critical(f"Failed to connect to DB after {max_retries} attempts")
+                raise
+            logger.warning(f"DB connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+
+    # Инициализация бота
+    await bot.initialize()
+    await bot.setup_webhook()
 
 
 @app.post("/api/telegram/webhook")
@@ -83,6 +84,20 @@ async def telegram_webhook(request: Request):
         logger.exception("Error processing update")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/health")
+async def health_check():
+    """Эндпоинт для проверки работоспособности"""
+    try:
+        async with engine.connect() as conn:
+            await conn.execute("SELECT 1")
+        return {
+            "status": "ok",
+            "database": "connected",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 app.add_middleware(
     CORSMiddleware,
