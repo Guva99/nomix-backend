@@ -1,15 +1,15 @@
 import os
 import base64
 import io
-from openai import AsyncOpenAI, http_client
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from PIL import Image
-
+import httpx
 
 
 # Загружаем переменные окружения
 load_dotenv()
-
+http_client = httpx.AsyncClient()
 # Создаём клиента
 client = AsyncOpenAI(api_key=os.getenv("OPEN_AI_API"), http_client=http_client)
 
