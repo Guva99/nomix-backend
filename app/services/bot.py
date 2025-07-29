@@ -172,7 +172,7 @@ class TelegramBot:
             await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
 
             # Отправка в backend
-            timeout = httpx.Timeout(30.0)
+            timeout = httpx.Timeout(60.0)
             async with httpx.AsyncClient() as client:
                 resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={
                     "file_url": file_url,
