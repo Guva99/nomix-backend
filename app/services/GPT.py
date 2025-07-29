@@ -1,15 +1,17 @@
 import os
 import base64
 import io
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, http_client
 from dotenv import load_dotenv
 from PIL import Image
+
+
 
 # Загружаем переменные окружения
 load_dotenv()
 
 # Создаём клиента
-client = AsyncOpenAI(api_key=os.getenv("OPEN_AI_API"))
+client = AsyncOpenAI(api_key=os.getenv("OPEN_AI_API"), http_client=http_client)
 
 # Промпт
 PROMPT = """
