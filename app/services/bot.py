@@ -209,7 +209,12 @@ class TelegramBot:
                 return
 
             # Очищаем Markdown-формат ```json ... ```
-            cleaned = re.sub(r"^```json\\n|```$", "", raw_result.strip())
+            json_match = re.search(r'```json\n(.*?)```', raw_result, re.DOTALL)
+            if not json_match:
+                await upd.message.reply_text("❌ Невозможно распарсить JSON-ответ от сервера.")
+                return
+
+            cleaned = json_match.group(1)
             result = json.loads(cleaned)
 
             if not result.get("is_receipt", False):
