@@ -3,7 +3,6 @@ import logging
 import base64
 import httpx
 import json
-from collections import defaultdict
 
 from telegram import (
     Update,
@@ -23,8 +22,10 @@ from telegram.ext import (
     filters
 )
 
+# ——— Настройка логирования ———
 logger = logging.getLogger(__name__)
 
+# ——— Переменные окружения ———
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("env TELEGRAM_BOT_TOKEN not set")
@@ -58,56 +59,9 @@ async def get_avatar_base64(user_id: int) -> str:
         return None
 
 
-def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyboardMarkup]:
-    store = receipt.get("store", "Магазин")
-    date = receipt.get("date", "")
-    time = receipt.get("time", "")
-    total = receipt.get("total", 0.0)
-
-    header = f"\U0001F6D2 {store} — {date} {time}\n\n"
-
-    categories = defaultdict(lambda: defaultdict(list))
-    category_totals = defaultdict(float)
-
-    for item in receipt["items"]:
-        cat = item.get("category", "Прочее")
-        subcat = item.get("subcategory", "—")
-        categories[cat][subcat].append((item["name"], item["price"]))
-        category_totals[cat] += item["price"]
-
-    category_emojis = {
-        "Еда и напитки": "🍔",
-        "Здоровье": "🩺",
-        "Транспорт": "🚗",
-        "Шопинг": "🛍",
-        "Прочее": "📦"
-    }
-
-    body = ""
-    for cat, subcats in categories.items():
-        emoji = category_emojis.get(cat, "\U0001F4E6")
-        body += f"{emoji} {cat}\n"
-        for subcat, items in subcats.items():
-            subcat_sum = sum(price for _, price in items)
-            body += f"{subcat:<25} {subcat_sum:.2f} ₽\n"
-            for name, price in items:
-                body += f"  {name:<23} {price:.2f} ₽\n"
-        body += "\n"
-
-    footer = f"💰 Итого:              {total:.2f} ₽"
-
-    message = header + body + footer
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url=f"https://mixfom2025.fvds.ru/edit-check?user_id={user_id}")),
-            InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")
-        ]
-    ])
-    return message, keyboard
-
-
 class TelegramBot:
+    """Singleton-обёртка вокруг python-telegram-bot v20"""
+
     def __init__(self) -> None:
         self.application: Application = None
 
@@ -117,6 +71,7 @@ class TelegramBot:
 
         self.application = ApplicationBuilder().token(TOKEN).build()
 
+        # WebApp кнопка в меню
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         await self.application.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
@@ -125,6 +80,7 @@ class TelegramBot:
             )
         )
 
+        # Хендлеры
         self.application.add_handler(CommandHandler("start", self._cmd_start))
         self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
@@ -167,9 +123,19 @@ class TelegramBot:
 
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         chat_id = upd.effective_chat.id
+        try:
+            with open("asset/welcome.gif", "rb") as gif:
+                await ctx.bot.send_animation(
+                    chat_id=chat_id,
+                    animation=gif,
+                    caption="Привет! Я Nomix — твой помощник по учёту трат 🧮"
+                )
+        except FileNotFoundError:
+            await ctx.bot.send_message(chat_id=chat_id, text="Привет! Я Nomix — твой помощник по учёту трат 🧮")
+
         await ctx.bot.send_message(
             chat_id=chat_id,
-            text="\u0412\u044b\u0431\u0435\u0440\u0438 \u043e\u043f\u0446\u0438\u044e:",
+            text="Выбери опцию:",
             reply_markup=self._build_menu()
         )
 
@@ -177,11 +143,20 @@ class TelegramBot:
         query = upd.callback_query
         await query.answer()
         if query.data == "stats":
-            await query.message.reply_text("\u042d\u0442\u0430 \u043e\u043f\u0446\u0438\u044f \u0435\u0449\u0451 \u0432 \u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u043a\u0435.", reply_markup=self._build_menu(exclude=["stats"]))
+            await query.message.reply_text(
+                "Эта опция ещё в разработке.",
+                reply_markup=self._build_menu(exclude=["stats"])
+            )
         elif query.data == "send_receipt":
-            await query.message.reply_text("\u041f\u0440\u0438\u0448\u043b\u0438 \u0444\u043e\u0442\u043e \u0447\u0435\u043a\u0430, \u0438 \u044f \u0440\u0430\u0437\u0431\u0435\u0440\u0443 \u0435\u0433\u043e \u043f\u043e \u043f\u043e\u043b\u043e\u0447\u043a\u0430\u043c \ud83e\uddfe", reply_markup=self._build_menu(exclude=["send_receipt"]))
+            await query.message.reply_text(
+                "Пришли фото чека, и я разберу его по полочкам 🧮",
+                reply_markup=self._build_menu(exclude=["send_receipt"])
+            )
         else:
-            await query.message.reply_text("\u0412\u044b\u0431\u0435\u0440\u0438 \u043e\u043f\u0446\u0438\u044e:", reply_markup=self._build_menu())
+            await query.message.reply_text(
+                "Выбери опцию:",
+                reply_markup=self._build_menu()
+            )
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
@@ -190,36 +165,68 @@ class TelegramBot:
             file = await ctx.bot.get_file(photo.file_id)
 
             path = file.file_path
-            file_url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+            if path.startswith("https://"):
+                file_url = path  # если уже полный
+            else:
+                file_url = f"https://api.telegram.org/file/bot{TOKEN}/{path}"
             await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
 
+            # Отправка в backend
             timeout = httpx.Timeout(120.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={"file_url": file_url, "user_id": user_id})
+                try:
+                    resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={
+                        "file_url": file_url,
+                        "user_id": user_id
+                    })
+                except httpx.ReadTimeout:
+                    logger.error("[BOT] Таймаут при обращении к backend")
+                    await upd.message.reply_text("⏱️ Сервер слишком долго обрабатывает изображение. Попробуйте позже.")
+                    return
 
             if resp.status_code != 200:
+                logger.error(f"[BOT] Ошибка от backend: {resp.status_code}, response: {resp.text}")
                 await upd.message.reply_text("❌ Произошла ошибка при обработке чека.")
                 return
 
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception as e:
+                logger.exception("[BOT] Не удалось распарсить JSON от backend")
+                await upd.message.reply_text("❌ Backend вернул невалидный JSON.")
+                return
+
             raw_result = data.get("result")
             if not raw_result:
+                logger.error("[BOT] Пустой result от backend")
                 await upd.message.reply_text("❌ Пустой результат от сервера.")
                 return
 
-            result = json.loads(raw_result)
+            try:
+                result = json.loads(raw_result)
+            except json.JSONDecodeError:
+                logger.error(f"[BOT] Невалидный JSON от GPT: {raw_result}")
+                await upd.message.reply_text("❌ Ответ от GPT не является валидным JSON.")
+                return
 
             if not result.get("is_receipt", False):
                 reason = result.get("reason", "Не удалось определить, что на изображении.")
                 await upd.message.reply_text(f"🚫 Это не чек.\nПричина: {reason}")
                 return
 
-            text, keyboard = render_receipt_message(result, user_id)
-            await upd.message.reply_text(text, reply_markup=keyboard)
+            store = result.get("store", "неизвестный магазин")
+            total = result.get("total", "?")
+            date = result.get("date", "")
+            time = result.get("time", "")
+            await upd.message.reply_text(
+                f"✅ Чек из *{store}*\n🗓 {date} {time}\n💰 Сумма: {total}₽",
+                parse_mode="Markdown"
+            )
 
-        except Exception:
-            logger.exception("\u041eшибка при обработке фото")
+        except Exception as e:
+            logger.exception("Ошибка при обработке фото")
             await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.")
 
 
+# Экспортируем синглтон
 bot = TelegramBot()
