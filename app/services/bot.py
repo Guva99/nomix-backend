@@ -172,12 +172,17 @@ class TelegramBot:
             await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
 
             # Отправка в backend
-            timeout = httpx.Timeout(60.0)
-            async with httpx.AsyncClient() as client:
-                resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={
-                    "file_url": file_url,
-                    "user_id": user_id
-                })
+            timeout = httpx.Timeout(120.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                try:
+                    resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={
+                        "file_url": file_url,
+                        "user_id": user_id
+                    })
+                except httpx.ReadTimeout:
+                    logger.error("[BOT] Таймаут при обращении к backend")
+                    await upd.message.reply_text("⏱️ Сервер слишком долго обрабатывает изображение. Попробуйте позже.")
+                    return
 
             if resp.status_code != 200:
                 logger.error(f"[BOT] Ошибка от backend: {resp.status_code}, response: {resp.text}")
