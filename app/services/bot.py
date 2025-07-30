@@ -40,7 +40,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     time = receipt.get("time", "")
     total = receipt.get("total", 0.0)
 
-    header = f"\U0001F6D2 {store} — {date} {time}\n\n"
+    header = f"🧾 <b>{store}</b>\n📅 {date}   🕒 {time}\n\n"
 
     categories = defaultdict(lambda: defaultdict(list))
     for item in receipt["items"]:
@@ -49,25 +49,33 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
         categories[cat][subcat].append((item["name"], item["price"]))
 
     category_emojis = {
-        "Еда и напитки": "🍔",
+        "Продукты": "🍔",
+        "Заведения": "🍽",
         "Здоровье": "🩺",
         "Транспорт": "🚗",
         "Шопинг": "🛍",
         "Прочее": "📦"
     }
 
+    def dotted_line(label: str, price: float, width: int = 40) -> str:
+        label = label.strip()
+        price_str = f"{price:.2f} ₽"
+        dots = '.' * max(1, width - len(label) - len(price_str))
+        return f"{label}{dots}{price_str}"
+
     body = ""
     for cat, subcats in categories.items():
         emoji = category_emojis.get(cat, "📦")
-        body += f"{emoji} {cat}\n"
+        body += f"<b>{emoji} {cat}</b>\n"
         for subcat, items in subcats.items():
             subcat_sum = sum(price for _, price in items)
-            body += f"{subcat:<25} {subcat_sum:.2f} ₽\n"
+            body += f"<pre>{dotted_line(subcat, subcat_sum)}</pre>\n"
             for name, price in items:
-                body += f"  {name:<23} {price:.2f} ₽\n"
+                trimmed = name[:30]  # ограничим имя
+                body += f"<pre>  {dotted_line(trimmed, price)}</pre>\n"
         body += "\n"
 
-    footer = f"💰 Итого:              {total:.2f} ₽"
+    footer = f"<b>💰 Итого:</b> <code>{total:,.2f} ₽</code>"
 
     message = header + body + footer
 
@@ -78,6 +86,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
         ]
     ])
     return message, keyboard
+
 
 
 async def get_avatar_base64(user_id: int) -> str:
