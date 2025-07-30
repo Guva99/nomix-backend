@@ -28,14 +28,14 @@ async def process_check(payload: PhotoPayload):
 
     return {"result": result}
 
-@router.get("/api/last-check")
+@router.get("/last-check")
 async def get_last_check(user_id: int = Query(...)):
     if user_id not in last_check_store:
         raise HTTPException(status_code=404, detail="Чек для пользователя не найден")
     return {"result": last_check_store[user_id]}
 
 
-@router.post("/api/save-check")
+@router.post("/save-check")
 async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get_db_session)):
     receipt = ReceiptDB(
         user_id=payload.user_id,
