@@ -263,7 +263,8 @@ class TelegramBot:
                 return
 
             text, keyboard = render_receipt_message(result, user_id)
-            await upd.message.reply_text(text, reply_markup=keyboard)
+            await upd.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+
 
         except Exception:
             logger.exception("Ошибка при обработке фото")
