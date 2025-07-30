@@ -45,7 +45,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     categories = defaultdict(lambda: defaultdict(list))
     for item in receipt["items"]:
         cat = item.get("category", "Прочее")
-        subcat = item.get("subcategory", "—")
+        subcat = item.get("subcategory") or "—"
         categories[cat][subcat].append((item["name"], item["price"]))
 
     category_emojis = {
