@@ -62,3 +62,9 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
 
     await db.commit()
     return {"status": "ok"}
+
+@router.get("/edit-check")
+async def edit_check(user_id: int = Query(...)):
+    if user_id not in last_check_store:
+        raise HTTPException(status_code=404, detail="Чек для пользователя не найден")
+    return last_check_store[user_id]

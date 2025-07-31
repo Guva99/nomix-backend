@@ -5,6 +5,7 @@ import httpx
 import json
 import re
 from collections import defaultdict
+from app.services.GPT import last_check_store
 
 from telegram import (
     Update,
@@ -200,30 +201,34 @@ class TelegramBot:
         await query.answer()
 
         user_id = query.from_user.id
-        token = os.getenv("BOT_INTERNAL_TOKEN")  # Можно просто подставить "секретный" токен если вызываешь с backend-а
 
         try:
+            # Получаем ранее сохранённый JSON из памяти
+            if user_id not in last_check_store:
+                await query.message.reply_text("❌ Нет распознанного чека для сохранения.")
+                return
+
+            last_check = last_check_store[user_id]
+
             async with httpx.AsyncClient() as client:
-                resp = await client.get(f"https://mixfom2025.fvds.ru/api/last-check", params={"user_id": user_id})
-                if resp.status_code != 200:
-                    await query.message.reply_text("❌ Не удалось получить последний чек.")
-                    return
-
-                last_check = resp.json()["result"]
-
                 save_resp = await client.post(
                     "https://mixfom2025.fvds.ru/api/bot/save-check",
                     json={**last_check, "user_id": user_id}
                 )
 
                 if save_resp.status_code != 200:
-                    await query.message.reply_text("❌ Не удалось сохранить чек.")
+                    try:
+                        detail = save_resp.json().get("detail") or save_resp.text
+                    except Exception:
+                        detail = save_resp.text
+                    await query.message.reply_text(f"🚫 Не удалось сохранить чек.\n\n{detail}")
                     return
 
             await query.message.reply_text("✅ Чек успешно сохранён!")
+
         except Exception:
             logger.exception("Ошибка при сохранении чека")
-            await query.message.reply_text("🚫 Произошла ошибка при сохранении.")
+            await query.message.reply_text("🚫 Произошла ошибка при сохранении. Попробуйте позже.")
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
