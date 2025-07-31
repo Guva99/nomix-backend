@@ -82,7 +82,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url=f"https://mixfom2025.fvds.ru/api/bot/edit-check?user_id={user_id}")),
+            InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/approve")),
             InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")
         ]
     ])
@@ -186,28 +186,10 @@ class TelegramBot:
     async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
         await query.answer()
-
         if query.data == "stats":
-            await query.message.reply_text(
-                "Эта опция ещё в разработке.",
-                reply_markup=self._build_menu(exclude=["stats"])
-            )
-
+            await query.message.reply_text("Эта опция ещё в разработке.", reply_markup=self._build_menu(exclude=["stats"]))
         elif query.data == "send_receipt":
-            # 🧾 Открытие экрана approve в Mini App
-            base_url = os.getenv("WEBAPP_BASE_URL", "https://nomix-d6199.web.app").rstrip("/")
-            approve_url = f"{base_url}/approve"
-
-            await query.message.reply_text(
-                "📄 Открываю экран загрузки чека...",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(
-                        text="🧾 Загрузить чек",
-                        web_app=WebAppInfo(url=approve_url)
-                    )]
-                ])
-            )
-
+            await query.message.reply_text("Пришли фото чека, и я разберу его по полочкам 🧮", reply_markup=self._build_menu(exclude=["send_receipt"]))
         else:
             await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
 
