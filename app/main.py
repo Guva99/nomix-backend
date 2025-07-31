@@ -32,7 +32,7 @@ app = FastAPI(
 
 # Разрешенные домены для CORS
 ALLOWED_ORIGINS = [
-    "https://nomix-d6199.web.app",
+    "https://nomix-d6199.web.app?mode=approve",
     "https://mixfom2025.fvds.ru"
 ]
 
