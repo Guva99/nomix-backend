@@ -47,7 +47,7 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
     )
 
     db.add(receipt)
-    await db.flush()  # чтобы получить ID перед вставкой items
+    await db.flush()
 
     for item in payload.items:
         db.add(ReceiptItemDB(

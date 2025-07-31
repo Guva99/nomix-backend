@@ -82,7 +82,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url=f"https://mixfom2025.fvds.ru/edit-check?user_id={user_id}")),
+            InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url=f"https://mixfom2025.fvds.ru/api/bot/edit-check?user_id={user_id}")),
             InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")
         ]
     ])
