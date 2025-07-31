@@ -126,7 +126,7 @@ class TelegramBot:
 
         self.application = ApplicationBuilder().token(TOKEN).build()
 
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+        versioned_url = "https://nomix-d6199.web.app=approve"
         await self.application.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
                 text="📱 Отрыть приложение",
