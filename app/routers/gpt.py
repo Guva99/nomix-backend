@@ -15,7 +15,7 @@ from app.services.GPT import analyze_receipt_from_bytes, last_check_store
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 router = APIRouter()
-STATIC_RECEIPT_DIR = "static/receipts"
+STATIC_RECEIPT_DIR = "app/static/receipts"
 os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
 
