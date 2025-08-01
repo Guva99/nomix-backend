@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Depends
+
+from app.main import logger
 from app.models.saved_check import SaveReceiptPayload
 from app.core.database import get_db_session
 from app.models.db.receipt import ReceiptDB, ReceiptItemDB
@@ -42,8 +44,11 @@ async def process_check(payload: PhotoPayload):
 
     try:
         result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        logger.error("❌ Ошибка парсинга JSON от GPT: %s", e)
+        logger.error("📦 Ответ от GPT:\n%s", raw_result)
         raise HTTPException(status_code=500, detail="Ответ GPT не является корректным JSON")
+
 
     result["image_url"] = public_url
 
