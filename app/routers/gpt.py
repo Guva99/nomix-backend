@@ -43,12 +43,20 @@ async def process_check(payload: PhotoPayload):
     # Анализируем чек
     raw_result = await analyze_receipt_from_bytes(image_bytes)
 
-    try:
-        result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
-    except json.JSONDecodeError as e:
-        logger.error("❌ Ошибка парсинга JSON от GPT: %s", e)
-        logger.error("📦 Ответ от GPT:\n%s", raw_result)
-        raise HTTPException(status_code=500, detail="Ответ GPT не является корректным JSON")
+    if isinstance(raw_result, str):
+        cleaned = raw_result.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned.removeprefix("```json").strip()
+        if cleaned.endswith("```"):
+            cleaned = cleaned.removesuffix("```").strip()
+        try:
+            result = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            logger.error("❌ Ошибка парсинга JSON от GPT: %s", e)
+            logger.error("📦 Ответ от GPT:\n%s", raw_result)
+            raise HTTPException(status_code=500, detail="Ответ GPT не является корректным JSON")
+    else:
+        result = raw_result
 
 
     result["image_url"] = public_url
