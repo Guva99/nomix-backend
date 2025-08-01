@@ -188,7 +188,6 @@ class TelegramBot:
             await query.message.reply_text("Эта опция ещё в разработке.", reply_markup=self._build_menu(exclude=["stats"]))
 
         elif query.data == "send_receipt":
-            await query.answer()
             waiting_for_photo.add(user_id)
             await query.message.reply_text(
                 "📸 Пришли фото чека, и я разберу его по полочкам 🧮",

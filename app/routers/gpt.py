@@ -45,7 +45,7 @@ async def process_check(payload: PhotoPayload):
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Ответ GPT не является корректным JSON")
 
-    result["image_url"] = public_url  # Добавляем ссылку на фото
+    result["image_url"] = public_url
 
     # Сохраняем результат по user_id
     last_check_store[payload.user_id] = result
