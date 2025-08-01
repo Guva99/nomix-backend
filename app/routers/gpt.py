@@ -1,3 +1,6 @@
+import os
+import uuid
+from datetime import datetime
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Depends
 from app.models.saved_check import SaveReceiptPayload
@@ -7,6 +10,8 @@ from app.models.checkPhoto import PhotoPayload
 from app.services.GPT import analyze_receipt_from_bytes, last_check_store
 from sqlalchemy.ext.asyncio import AsyncSession
 router = APIRouter()
+STATIC_RECEIPT_DIR = "static/receipts"
+os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
 
 @router.post("/process-check")
 async def process_check(payload: PhotoPayload):
@@ -21,7 +26,17 @@ async def process_check(payload: PhotoPayload):
 
         image_bytes = resp.content
 
+    # Сохраняем изображение
+    filename = f"user_{payload.user_id}_{datetime.utcnow().timestamp():.0f}.jpg"
+    filepath = os.path.join(STATIC_RECEIPT_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(image_bytes)
+
+    public_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
+
+    # Анализируем чек
     result = await analyze_receipt_from_bytes(image_bytes)
+    result["image_url"] = public_url  # Добавляем ссылку на фото
 
     # Сохраняем результат по user_id
     last_check_store[payload.user_id] = result

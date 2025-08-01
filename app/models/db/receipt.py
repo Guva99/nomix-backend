@@ -13,6 +13,7 @@ class ReceiptDB(Base):
     time = Column(String)
     total = Column(Float)
     currency = Column(String)
+    image_url = Column(String, nullable=True)
 
     items = relationship("ReceiptItemDB", back_populates="receipt", cascade="all, delete-orphan")
 
