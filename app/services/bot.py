@@ -160,13 +160,21 @@ class TelegramBot:
         elif query.data == "send_receipt":
             user_id = query.from_user.id
             waiting_for_photo.add(user_id)
-            await query.message.reply_text("Пришли фото чека, и я разберу его по полочкам 🧲", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Вернуться в меню", callback_data="go_home")]]))
+            await query.message.reply_text(
+                "Пришли фото чека, и я разберу его по полочкам 🧮",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("↩️ Вернуться в меню", callback_data="back_to_menu")]
+                ])
+            )
+
             await asyncio.sleep(60)
             if user_id in waiting_for_photo:
                 waiting_for_photo.remove(user_id)
                 await ctx.bot.send_message(chat_id=user_id, text="⏱ Время ожидания истекло. Вернёмся в начало?", reply_markup=self._build_menu())
         elif query.data == "go_home":
             await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
+        elif query.data == "back_to_menu":
+            await query.message.reply_text("Вы вернулись в главное меню:", reply_markup=self._build_menu())
 
     async def _handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await upd.message.reply_text("📝 Я получил ваше сообщение!")
