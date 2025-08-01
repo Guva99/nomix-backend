@@ -4,6 +4,7 @@ import base64
 import httpx
 import json
 import re
+import asyncio
 from collections import defaultdict
 from app.services.GPT import last_check_store
 
@@ -34,6 +35,7 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
+waiting_for_photo = set()
 
 def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     store = receipt.get("store", "Магазин")
@@ -73,9 +75,9 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
             body += f"{subcat} === {subcat_sum:,.2f} ₽\n"
             for i, (name, price) in enumerate(items, 1):
                 body += f"  {i}. {name:<22} {price:,.2f} ₽\n"
-            body += "—————————\n"
+            body += "———————————\n"
 
-    footer = "\n•••••••••••••••••••••••••\n"
+    footer = "\n••••••••••••••••••••••\n"
     footer += f"💰 Итого:              {total:,.2f} ₽"
 
     message = header + body + footer
@@ -89,38 +91,11 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     return message, keyboard
 
 
-
-
-async def get_avatar_base64(user_id: int) -> str:
-    try:
-        bot = Bot(token=TOKEN)
-        photos = await bot.get_user_profile_photos(user_id, limit=1)
-        if photos.total_count == 0:
-            return None
-
-        file_obj = await bot.get_file(photos.photos[0][-1].file_id)
-        path = file_obj.file_path
-        url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                logger.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
-                return None
-
-            encoded = base64.b64encode(resp.content).decode("utf-8")
-            return f"data:image/jpeg;base64,{encoded}"
-
-    except Exception as e:
-        logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
-        return None
-
-
 class TelegramBot:
-    def __init__(self) -> None:
+    def __init__(self):
         self.application: Application = None
 
-    async def initialize(self) -> None:
+    async def initialize(self):
         if self.application:
             return
 
@@ -139,11 +114,12 @@ class TelegramBot:
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self.application.add_handler(MessageHandler(filters.TEXT, self._handle_message))
         self.application.add_handler(CallbackQueryHandler(self._on_callback_confirm_save, pattern="^confirm_save$"))
+        self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
 
         await self.application.initialize()
-        logger.info("Telegram bot initialized with short menu button text")
+        logger.info("Telegram bot initialized")
 
-    async def setup_webhook(self) -> None:
+    async def setup_webhook(self):
         await self.initialize()
         webhook_url = os.getenv("WEBHOOK_URL", f"{WEBAPP_BASE_URL}webhook")
         info = await self.application.bot.get_webhook_info()
@@ -153,7 +129,7 @@ class TelegramBot:
         else:
             logger.info("Webhook already at %s – skip", webhook_url)
 
-    async def process_update(self, upd: Update) -> None:
+    async def process_update(self, upd: Update):
         await self.initialize()
         await self.application.process_update(upd)
 
@@ -163,10 +139,7 @@ class TelegramBot:
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         buttons = []
         if "app" not in exclude:
-            buttons.append([InlineKeyboardButton(
-                text="📱 Отрыть приложение",
-                web_app=WebAppInfo(url=versioned_url)
-            )])
+            buttons.append([InlineKeyboardButton(text="📱 Отрыть приложение", web_app=WebAppInfo(url=versioned_url))])
         row = []
         if "stats" not in exclude:
             row.append(InlineKeyboardButton(text="📈 Статистика", callback_data="stats"))
@@ -177,11 +150,7 @@ class TelegramBot:
         return InlineKeyboardMarkup(buttons)
 
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        await ctx.bot.send_message(
-            chat_id=upd.effective_chat.id,
-            text="Выбери опцию:",
-            reply_markup=self._build_menu()
-        )
+        await ctx.bot.send_message(chat_id=upd.effective_chat.id, text="Выбери опцию:", reply_markup=self._build_menu())
 
     async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
@@ -189,8 +158,14 @@ class TelegramBot:
         if query.data == "stats":
             await query.message.reply_text("Эта опция ещё в разработке.", reply_markup=self._build_menu(exclude=["stats"]))
         elif query.data == "send_receipt":
-            await query.message.reply_text("Пришли фото чека, и я разберу его по полочкам 🧮", reply_markup=self._build_menu(exclude=["send_receipt"]))
-        else:
+            user_id = query.from_user.id
+            waiting_for_photo.add(user_id)
+            await query.message.reply_text("Пришли фото чека, и я разберу его по полочкам 🧲", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Вернуться в меню", callback_data="go_home")]]))
+            await asyncio.sleep(60)
+            if user_id in waiting_for_photo:
+                waiting_for_photo.remove(user_id)
+                await ctx.bot.send_message(chat_id=user_id, text="⏱ Время ожидания истекло. Вернёмся в начало?", reply_markup=self._build_menu())
+        elif query.data == "go_home":
             await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
 
     async def _handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -201,80 +176,52 @@ class TelegramBot:
         await query.answer()
 
         user_id = query.from_user.id
-
         try:
-            # Получаем ранее сохранённый JSON из памяти
             if user_id not in last_check_store:
                 await query.message.reply_text("❌ Нет распознанного чека для сохранения.")
                 return
 
             last_check = last_check_store[user_id]
-
             async with httpx.AsyncClient() as client:
-                save_resp = await client.post(
-                    "https://mixfom2025.fvds.ru/api/bot/save-check",
-                    json={**last_check, "user_id": user_id}
-                )
+                save_resp = await client.post("https://mixfom2025.fvds.ru/api/bot/save-check", json={**last_check, "user_id": user_id})
 
-                if save_resp.status_code != 200:
-                    try:
-                        detail = save_resp.json().get("detail") or save_resp.text
-                    except Exception:
-                        detail = save_resp.text
-                    await query.message.reply_text(f"🚫 Не удалось сохранить чек.\n\n{detail}")
-                    return
+            if save_resp.status_code != 200:
+                try:
+                    detail = save_resp.json().get("detail") or save_resp.text
+                except Exception:
+                    detail = save_resp.text
+                await query.message.reply_text(f"🚫 Не удалось сохранить чек.\n\n{detail}")
+                return
 
             await query.message.reply_text("✅ Чек успешно сохранён!")
-
         except Exception:
-            logger.exception("Ошибка при сохранении чека")
-            await query.message.reply_text("🚫 Произошла ошибка при сохранении. Попробуйте позже.")
+            logger.exception("Error saving check")
+            await query.message.reply_text("🚫 Ошибка при сохранении. Попробуйте позже.")
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        user_id = upd.effective_user.id
+        waiting_for_photo.discard(user_id)
+
         try:
-            user_id = upd.effective_user.id
             photo = upd.message.photo[-1]
             file = await ctx.bot.get_file(photo.file_id)
-
-            path = file.file_path
-            file_url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+            file_url = file.file_path if file.file_path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
             await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
 
-            timeout = httpx.Timeout(120.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 resp = await client.post("https://mixfom2025.fvds.ru/api/bot/process-check", json={"file_url": file_url, "user_id": user_id})
 
-            if resp.status_code != 200:
-                await upd.message.reply_text("❌ Произошла ошибка при обработке чека.")
-                return
-
             data = resp.json()
-            raw_result = data.get("result")
-            if not raw_result:
-                await upd.message.reply_text("❌ Пустой результат от сервера.")
-                return
-
-            # Очищаем Markdown-формат ```json ... ```
-            json_match = re.search(r'```json\n(.*?)```', raw_result, re.DOTALL)
-            if not json_match:
-                await upd.message.reply_text("❌ Невозможно распарсить JSON-ответ от сервера.")
-                return
-
-            cleaned = json_match.group(1)
-            result = json.loads(cleaned)
-
-            if not result.get("is_receipt", False):
-                reason = result.get("reason", "Не удалось определить, что на изображении.")
-                await upd.message.reply_text(f"🚫 Это не чек.\nПричина: {reason}")
+            result = data.get("result")
+            if not result or not result.get("is_receipt"):
+                await upd.message.reply_text("🚫 Это не чек.")
                 return
 
             text, keyboard = render_receipt_message(result, user_id)
-            await upd.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
-
-
+            await upd.message.reply_text(text, reply_markup=keyboard)
         except Exception:
-            logger.exception("Ошибка при обработке фото")
-            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.")
+            logger.exception("Error in handle_photo")
+            await upd.message.reply_text("🚫 Ошибка при обработке фото")
 
 
 bot = TelegramBot()
