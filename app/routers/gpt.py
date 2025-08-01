@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 from datetime import datetime
@@ -37,7 +38,13 @@ async def process_check(payload: PhotoPayload):
     public_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
 
     # Анализируем чек
-    result = await analyze_receipt_from_bytes(image_bytes)
+    raw_result = await analyze_receipt_from_bytes(image_bytes)
+
+    try:
+        result = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Ответ GPT не является корректным JSON")
+
     result["image_url"] = public_url  # Добавляем ссылку на фото
 
     # Сохраняем результат по user_id
