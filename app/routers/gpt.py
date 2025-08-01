@@ -5,7 +5,7 @@ from datetime import datetime
 import httpx
 from fastapi import APIRouter, Query, HTTPException, Depends
 
-from app.main import logger
+import logging
 from app.models.saved_check import SaveReceiptPayload
 from app.core.database import get_db_session
 from app.models.db.receipt import ReceiptDB, ReceiptItemDB
@@ -17,6 +17,7 @@ from sqlalchemy.future import select
 router = APIRouter()
 STATIC_RECEIPT_DIR = "static/receipts"
 os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
+logger = logging.getLogger(__name__)
 
 @router.post("/process-check")
 async def process_check(payload: PhotoPayload):
