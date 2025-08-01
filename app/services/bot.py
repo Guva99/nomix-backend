@@ -7,6 +7,7 @@ import re
 import asyncio
 from collections import defaultdict
 from app.services.GPT import last_check_store
+from telegram.helpers import escape
 
 from telegram import (
     Update,
@@ -79,10 +80,8 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     footer += f"💰 Итого:              {total:,.2f} ₽"
 
     keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/approve")),
-            InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")
-        ]
+        [InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/approve"))],
+        [InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")]
     ])
     return header + body + footer, keyboard
 
@@ -131,10 +130,10 @@ class TelegramBot:
         )
 
         self.application.add_handler(CommandHandler("start", self._cmd_start))
+        self.application.add_handler(CallbackQueryHandler(self._on_callback_confirm_save, pattern="^confirm_save$"))
         self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
         self.application.add_handler(MessageHandler(filters.TEXT, self._handle_message))
-        self.application.add_handler(CallbackQueryHandler(self._on_callback_confirm_save, pattern="^confirm_save$"))
 
         await self.application.initialize()
         logger.info("Telegram bot initialized")
@@ -219,21 +218,28 @@ class TelegramBot:
 
     async def _on_callback_confirm_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
-        await query.answer()
-
         user_id = query.from_user.id
+        logger.info("[confirm_save] Нажата кнопка 'Сохранить' пользователем %s", user_id)
 
         try:
+            await query.answer()
+            logger.info("[confirm_save] Callback query успешно подтвержден")
+
             if user_id not in last_check_store:
+                logger.warning("[confirm_save] last_check_store не содержит данные для user_id=%s", user_id)
                 await query.message.reply_text("❌ Нет распознанного чека для сохранения.")
                 return
 
             last_check = last_check_store[user_id]
+            logger.info("[confirm_save] Получены данные чека: %s", json.dumps(last_check, ensure_ascii=False))
+
             async with httpx.AsyncClient() as client:
                 save_resp = await client.post(
                     "https://mixfom2025.fvds.ru/api/bot/save-check",
                     json={**last_check, "user_id": user_id}
                 )
+                logger.info("[confirm_save] Ответ от /save-check: %s %s", save_resp.status_code, save_resp.text)
+
             if save_resp.status_code != 200:
                 try:
                     detail = save_resp.json().get("detail") or save_resp.text
@@ -243,9 +249,10 @@ class TelegramBot:
                 return
 
             await query.message.reply_text("✅ Чек успешно сохранён!")
+            logger.info("[confirm_save] Чек успешно сохранён пользователем %s", user_id)
 
-        except Exception:
-            logger.exception("Ошибка при сохранении чека")
+        except Exception as e:
+            logger.exception("[confirm_save] Ошибка при сохранении чека: %s", str(e))
             await query.message.reply_text("🚫 Произошла ошибка при сохранении. Попробуйте позже.")
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -283,7 +290,7 @@ class TelegramBot:
                 return
 
             text, keyboard = render_receipt_message(result, user_id)
-            await upd.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await upd.message.reply_text(escape(text), reply_markup=keyboard, parse_mode="HTML")
 
         except Exception:
             logger.exception("Ошибка при обработке фото")
