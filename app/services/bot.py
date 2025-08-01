@@ -272,18 +272,10 @@ class TelegramBot:
                 return
 
             data = resp.json()
-            raw_result = data.get("result")
-            if not raw_result:
+            result = data.get("result")
+            if not result:
                 await upd.message.reply_text("❌ Пустой результат от сервера.")
                 return
-
-            json_match = re.search(r'```json\n(.*?)```', raw_result, re.DOTALL)
-            if not json_match:
-                await upd.message.reply_text("❌ Невозможно распарсить JSON-ответ от сервера.")
-                return
-
-            cleaned = json_match.group(1)
-            result = json.loads(cleaned)
 
             if not result.get("is_receipt", False):
                 reason = result.get("reason", "Не удалось определить, что на изображении.")
