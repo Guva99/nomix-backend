@@ -111,3 +111,25 @@ async def edit_check(user_id: int = Query(...)):
         raise HTTPException(status_code=404, detail="Чек для пользователя не найден")
 
     return last_check_store[user_id]
+
+@router.get("/edit-saved-check")
+async def edit_saved_check(id: int, db: AsyncSession = Depends(get_db_session)):
+    result = await db.execute(select(ReceiptDB).where(ReceiptDB.id == id))
+    receipt = result.scalar()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Чек не найден")
+
+    items_result = await db.execute(select(ReceiptItemDB).where(ReceiptItemDB.receipt_id == id))
+    items = items_result.scalars().all()
+
+    return {
+        "id": receipt.id,
+        "store": receipt.store,
+        "date": receipt.date,
+        "time": receipt.time,
+        "total": receipt.total,
+        "currency": receipt.currency,
+        "image_url": receipt.image_url,
+        "items": [item.__dict__ for item in items]
+    }
+
