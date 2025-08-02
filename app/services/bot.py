@@ -235,7 +235,7 @@ class TelegramBot:
 
             async with httpx.AsyncClient() as client:
                 save_resp = await client.post(
-                    "https://mixfom2025.fvds.ru/api/bot/save-check",
+                    "https://mixfom2025.fvds.ru/api/receipts/save-check",
                     json={**last_check, "user_id": user_id}
                 )
                 logger.info("[confirm_save] Ответ от /save-check: %s %s", save_resp.status_code, save_resp.text)
