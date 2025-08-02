@@ -12,6 +12,7 @@ from app.services.bot import bot
 from app.routers.auth import router as login
 from app.routers.data import router as data
 from app.routers.gpt import router as gpt
+from app.routers.Checks import router as checks
 from alembic.config import Config
 from alembic import command
 
@@ -40,6 +41,8 @@ ALLOWED_ORIGINS = [
 app.include_router(login, prefix="/api/telegram", tags=["telegram"])
 app.include_router(data, prefix="/api/data", tags=["Database"])
 app.include_router(gpt, prefix="/api/bot", tags=["GPT"])
+app.include_router(checks, prefix="/api/checks", tags=["Checks"])
+
 
 
 @app.on_event("startup")
