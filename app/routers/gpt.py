@@ -145,6 +145,19 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
 
 @router.get("/edit-check")
 async def edit_check(user_id: int = Query(...)):
+    logger.info("📥 [edit-check] Запрос от user_id=%s", user_id)
+
+    # Выводим содержимое хранилища на случай отладки
+    if not last_check_store:
+        logger.warning("⚠️ [edit-check] last_check_store пуст")
+    else:
+        logger.info("🗃 [edit-check] Ключи в last_check_store: %s", list(last_check_store.keys()))
+        if user_id in last_check_store:
+            logger.info("✅ [edit-check] Чек найден для user_id=%s", user_id)
+        else:
+            logger.warning("❌ [edit-check] Чек не найден для user_id=%s", user_id)
+
     if user_id not in last_check_store:
         raise HTTPException(status_code=404, detail="Чек для пользователя не найден")
+
     return last_check_store[user_id]
