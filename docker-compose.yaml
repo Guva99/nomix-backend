@@ -7,6 +7,8 @@ services:
       args:
         GITHUB_TOKEN: ${GITHUB_TOKEN}
     env_file: .env
+    volumes:
+      - ./app/static:/app/static
     expose:
       - "8000"
     depends_on:
