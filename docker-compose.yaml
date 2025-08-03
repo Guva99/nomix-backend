@@ -62,3 +62,4 @@ networks:
 
 volumes:
   postgres_data:
+  receipts_data:
