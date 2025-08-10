@@ -9,7 +9,7 @@ from app.models.checkPhoto import PhotoPayload
 from app.services.GPT import analyze_receipt_from_bytes, last_check_store
 
 router = APIRouter()
-STATIC_RECEIPT_DIR = "app/static/receipts"
+STATIC_RECEIPT_DIR = "/app/static/receipts"
 os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
 
