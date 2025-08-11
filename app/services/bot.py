@@ -8,6 +8,7 @@ import asyncio
 from collections import defaultdict
 from app.services.GPT import last_check_store
 from telegram.helpers import escape
+from telegram.error import BadRequest
 
 from telegram import (
     Update,
@@ -178,40 +179,65 @@ class TelegramBot:
             reply_markup=self._build_menu()
         )
 
+    from telegram.error import BadRequest
+    import asyncio
+
     async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         query = upd.callback_query
-        await query.answer()
-        user_id = query.from_user.id
+        user_id = query.from_user.id  # Получаем ID пользователя
 
-        if query.data == "stats":
-            await query.message.reply_text("Эта опция ещё в разработке.", reply_markup=self._build_menu(exclude=["stats"]))
+        try:
+            # Пытаемся ответить на callback query
+            await query.answer()
 
-        elif query.data == "send_receipt":
-            waiting_for_photo.add(user_id)
-            await query.message.reply_text(
-                "📸 Пришли фото чека, и я разберу его по полочкам 🧮",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Вернуться в меню", callback_data="back_to_menu")]
-                ])
-            )
-            await asyncio.sleep(60)
-            if user_id in waiting_for_photo:
-                waiting_for_photo.remove(user_id)
-                await ctx.bot.send_message(
-                    chat_id=user_id,
-                    text="⏱ Похоже, ты не прислал фото чека. Вернёмся в главное меню?",
-                    reply_markup=self._build_menu()
+            if query.data == "stats":
+                await query.message.reply_text("Эта опция ещё в разработке.",
+                                               reply_markup=self._build_menu(exclude=["stats"]))
+
+            elif query.data == "send_receipt":
+                # Добавляем пользователя в список, ожидающих фото
+                waiting_for_photo.add(user_id)
+
+                # Отправляем сообщение с просьбой прислать фото чека
+                await query.message.reply_text(
+                    "📸 Пришли фото чека, и я разберу его по полочкам 🧮",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Вернуться в меню", callback_data="back_to_menu")]
+                    ])
                 )
 
-        elif query.data == "back_to_menu":
-            waiting_for_photo.discard(user_id)
-            await query.message.reply_text("🔙 Вы вернулись в главное меню:", reply_markup=self._build_menu())
+                # Ждем фото в течение 60 секунд
+                await asyncio.sleep(60)
+                if user_id in waiting_for_photo:
+                    waiting_for_photo.remove(user_id)
+                    # Если фото не прислано, напоминаем пользователю
+                    await ctx.bot.send_message(
+                        chat_id=user_id,
+                        text="⏱ Похоже, ты не прислал фото чека. Вернёмся в главное меню?",
+                        reply_markup=self._build_menu()
+                    )
 
-        elif query.data == "go_home":
-            await query.message.reply_text("🔙 Главное меню:", reply_markup=self._build_menu())
+            elif query.data == "back_to_menu":
+                # Если нажата кнопка "Вернуться в меню"
+                waiting_for_photo.discard(user_id)
+                await query.message.reply_text("🔙 Вы вернулись в главное меню:", reply_markup=self._build_menu())
 
-        else:
-            await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
+            elif query.data == "go_home":
+                # Если нажата кнопка "Главное меню"
+                await query.message.reply_text("🔙 Главное меню:", reply_markup=self._build_menu())
+
+            else:
+                # Для любых других кнопок
+                await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
+
+        except BadRequest as e:
+            # Обработка ошибок, связанных с истечением времени запроса
+            if "Query is too old" in str(e):
+                await query.message.reply_text("⏱ Время на ответ истекло. Попробуйте снова.")
+            else:
+                # Если ошибка не связана с тайм-аутом, пробрасываем её дальше
+                logger.error(f"Ошибка обработки callback query: {e}")
+                await query.message.reply_text("❌ Произошла ошибка. Попробуйте снова.")
 
     async def _handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await upd.message.reply_text("📝 Я получил ваше сообщение!")

@@ -60,7 +60,6 @@ async def get_last_check(
         })
 
     return {
-        "last_check": last_check,
         "saved_checks": response
     }
 
