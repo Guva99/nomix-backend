@@ -1,24 +1,34 @@
 import os
 import logging
-import base64
 import httpx
 import json
 import asyncio
+import base64
 from collections import defaultdict
-from telegram.helpers import escape
-from telegram.error import BadRequest
+from typing import Optional
+
 from telegram import (
-    Update, MenuButtonWebApp, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, Bot, BotCommand
+    Update,
+    MenuButtonWebApp,
+    WebAppInfo,
+    Bot,
+    BotCommand,
 )
+from telegram.helpers import escape
 from telegram.ext import (
-    Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ContextTypes, filters
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
 )
 
 from app.services.GPT import last_check_store
 
 logger = logging.getLogger(__name__)
 
+# --- конфиг из ENV ---
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("env TELEGRAM_BOT_TOKEN not set")
@@ -26,12 +36,41 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
+# где лежат итоговые картинки (публичная статика)
 PUBLIC_STATIC_BASE = "https://mixfom2025.fvds.ru/static/receipts"
 STATIC_RECEIPT_DIR = "/app/static/receipts"
 
-waiting_for_photo = set()
+# --- вспомогательные вещи ---
+
+async def get_avatar_base64(user_id: int) -> Optional[str]:
+    """
+    Скачивает аватар пользователя и возвращает data: URL (base64) или None.
+    """
+    try:
+        tgbot = Bot(token=TOKEN)
+        photos = await tgbot.get_user_profile_photos(user_id, limit=1)
+        if photos.total_count == 0:
+            return None
+
+        file_obj = await tgbot.get_file(photos.photos[0][-1].file_id)
+        path = file_obj.file_path
+        url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                logger.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
+                return None
+
+        encoded = base64.b64encode(resp.content).decode("utf-8")
+        return f"data:image/jpeg;base64,{encoded}"
+    except Exception as e:
+        logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
+        return None
+
 
 def render_receipt_text(receipt: dict) -> str:
+    """Короткое человекочитаемое резюме распознанного чека."""
     store = receipt.get("store", "Магазин")
     date = receipt.get("date", "")
     time = receipt.get("time", "")
@@ -43,63 +82,85 @@ def render_receipt_text(receipt: dict) -> str:
     for item in receipt.get("items", []):
         cat = item.get("category", "Прочее")
         subcat = item.get("subcategory") or "—"
-        categories[cat][subcat].append((item["name"], item["price"]))
+        categories[cat][subcat].append((item.get("name", "—"), float(item.get("price", 0))))
 
-    category_emojis = {"Продукты":"🍔","Заведение":"🍽","Еда и напитки":"🍔","Здоровье":"💊","Транспорт":"🚗","Шопинг":"🛍","Прочее":"📦"}
+    category_emojis = {
+        "Продукты": "🍔",
+        "Заведение": "🍽",
+        "Еда и напитки": "🍔",
+        "Здоровье": "💊",
+        "Транспорт": "🚗",
+        "Шопинг": "🛍",
+        "Прочее": "📦",
+    }
 
-    body = ""
+    body_lines = []
     for cat, subcats in categories.items():
         emoji = category_emojis.get(cat, "📦")
         cat_sum = sum(sum(price for _, price in items) for items in subcats.values())
-        body += f"{emoji} {cat} — {cat_sum:,.2f} ₽\n"
+        body_lines.append(f"{emoji} {cat}: {cat_sum:,.2f} ₽")
         for subcat, items in subcats.items():
             subcat_sum = sum(price for _, price in items)
-            body += f"  {subcat}: {subcat_sum:,.2f} ₽\n"
-    footer = f"\n💰 Итого: {total:,.2f} ₽"
-    return header + body + footer
+            body_lines.append(f"  • {subcat}: {subcat_sum:,.2f} ₽")
+
+    footer = f"\n💰 Итого: {float(total):,.2f} ₽"
+    return header + ("\n".join(body_lines) if body_lines else "—") + footer
+
 
 class TelegramBot:
+    """
+    Обёртка над python-telegram-bot:
+    - создаёт меню команд
+    - ставит компактную кнопку мини‑аппа "Open"
+    - обрабатывает /receipt, /save, /cancel, /stats и фото
+    - совместим с main.py через глобальную переменную `bot`
+    """
+
     def __init__(self) -> None:
-        self.application: Application = None
+        self.application: Optional[Application] = None
+
+    # --- жизненный цикл/инициализация ---
 
     async def initialize(self) -> None:
         if self.application:
             return
+
         self.application = ApplicationBuilder().token(TOKEN).build()
 
-        # мини‑апп — короткая подпись
+        # компактная кнопка мини‑аппа (не засоряет интерфейс)
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         await self.application.bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(
-                text="Open",  # короче и не «кричит»
-                web_app=WebAppInfo(url=versioned_url),
-            )
+            menu_button=MenuButtonWebApp(text="Open", web_app=WebAppInfo(url=versioned_url))
         )
 
-        # команды в меню (иконка 9‑квадратиков)
-        await self.application.bot.set_my_commands([
-            BotCommand("start", "Начать"),
-            BotCommand("receipt", "Отправить фото чека"),
-            BotCommand("save", "Сохранить последний распознанный чек"),
-            BotCommand("cancel", "Отменить и удалить последний чек"),
-            BotCommand("stats", "Статистика"),
-        ])
+        # команды в меню
+        await self.application.bot.set_my_commands(
+            [
+                BotCommand("start", "Начать"),
+                BotCommand("receipt", "Отправить фото чека"),
+                BotCommand("save", "Сохранить последний распознанный чек"),
+                BotCommand("cancel", "Отменить и удалить последний чек"),
+                BotCommand("stats", "Статистика"),
+            ]
+        )
 
-        # хендлеры
+        # handlers
         self.application.add_handler(CommandHandler("start", self._cmd_start))
+        self.application.add_handler(CommandHandler("stats", self._cmd_stats))
         self.application.add_handler(CommandHandler("receipt", self._cmd_receipt))
         self.application.add_handler(CommandHandler("save", self._cmd_save))
         self.application.add_handler(CommandHandler("cancel", self._cmd_cancel))
-        self.application.add_handler(CommandHandler("stats", self._cmd_stats))
 
-        # больше НЕ используем confirm_save и тяжелые inline‑кнопки
+        # фото -> распознаём чек
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
+        # текст без команд — мягкая подсказка
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
         await self.application.initialize()
         logger.info("Telegram bot initialized")
 
     async def setup_webhook(self) -> None:
+        """Вызывается из app.main при старте сервиса."""
         await self.initialize()
         webhook_url = os.getenv("WEBHOOK_URL", f"{WEBAPP_BASE_URL}webhook")
         info = await self.application.bot.get_webhook_info()
@@ -110,6 +171,7 @@ class TelegramBot:
             logger.info("Webhook already at %s – skip", webhook_url)
 
     async def process_update(self, upd: Update) -> None:
+        """Хэнд-офф из роутера вебхука."""
         await self.initialize()
         await self.application.process_update(upd)
 
@@ -118,42 +180,44 @@ class TelegramBot:
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(
             chat_id=upd.effective_chat.id,
-            text="Привет! Используй меню команд (кнопка с квадратами) или:\n" \
-                 "/receipt — прислать фото чека\n/save — сохранить последний\n/cancel — отменить"
+            text=(
+                "Привет! Я помогу разобрать чек по категориям.\n\n"
+                "Команды:\n"
+                "• /receipt — пришли фото чека\n"
+                "• /save — сохранить последний распознанный чек\n"
+                "• /cancel — удалить последний распознанный чек\n"
+                "• /stats — статистика (скоро)\n\n"
+                "Также в меню есть кнопка Open для мини‑аппа."
+            ),
         )
 
     async def _cmd_stats(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await upd.message.reply_text("Статистика пока в разработке.")
 
     async def _cmd_receipt(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        user_id = upd.effective_user.id
-        waiting_for_photo.add(user_id)
-        await upd.message.reply_text("📸 Пришли фото чека одним сообщением. После распознавания я попрошу подтвердить /save или /cancel.")
-        # мягкое напоминание
-        await asyncio.sleep(60)
-        if user_id in waiting_for_photo:
-            waiting_for_photo.discard(user_id)
-            await ctx.bot.send_message(chat_id=user_id, text="⏱ Не дождался фото. Команда /receipt чтобы попробовать снова.")
+        await upd.message.reply_text("📸 Отправь фото чека одним сообщением. После распознавания подтверди /save или /cancel.")
 
     async def _cmd_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Подтверждение сохранения: переносим файл из tmp -> receipts, шлём в /save-check."""
         user_id = upd.effective_user.id
         data = last_check_store.get(user_id)
         if not data:
-            await upd.message.reply_text("❌ Нет распознанного чека для сохранения.")
+            await upd.message.reply_text("❌ Нет распознанного чека для сохранения. Используй /receipt и отправь фото.")
             return
 
+        # ожидаем, что в last_check_store лежит:
+        # {"receipt": {...}, "tmp_path": ".../tmp_xxx.jpg", "tmp_name": "xxx.jpg"}
         receipt = data.get("receipt") or {}
         tmp_path = data.get("tmp_path")
         tmp_name = data.get("tmp_name")
-        if not tmp_path or not os.path.exists(tmp_path):
-            await upd.message.reply_text("❌ Временный файл изображения не найден.")
+        if not tmp_path or not tmp_name or not os.path.exists(tmp_path):
             last_check_store.pop(user_id, None)
+            await upd.message.reply_text("❌ Временный файл изображения не найден. Пришли чек ещё раз через /receipt.")
             return
 
-        # переносим файл в публичную статику
         final_path = os.path.join(STATIC_RECEIPT_DIR, tmp_name)
         try:
-            os.replace(tmp_path, final_path)  # атомарнее чем rename на некоторых FS
+            os.replace(tmp_path, final_path)
         except Exception as e:
             logger.exception("move image failed: %s", e)
             await upd.message.reply_text("🚫 Не удалось сохранить изображение на сервере.")
@@ -164,54 +228,57 @@ class TelegramBot:
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post("https://mixfom2025.fvds.ru/api/receipts/save-check", json=payload)
-            if resp.status_code != 200:
-                detail = resp.text
+                r = await client.post("https://mixfom2025.fvds.ru/api/receipts/save-check", json=payload)
+            if r.status_code != 200:
+                detail = r.text
                 try:
-                    detail = resp.json().get("detail") or detail
+                    detail = r.json().get("detail") or detail
+                except Exception:
+                    pass
+                try:
+                    os.remove(final_path)
                 except Exception:
                     pass
                 await upd.message.reply_text(f"🚫 Не удалось сохранить чек.\n{detail}")
-                # откат: удалим файл, чтобы не копился мусор
-                try: os.remove(final_path)
-                except Exception: pass
                 return
         except Exception:
             logger.exception("save-check request failed")
-            # откат файла
-            try: os.remove(final_path)
-            except Exception: pass
-            await upd.message.reply_text("🚫 Ошибка сети при сохранении.")
+            try:
+                os.remove(final_path)
+            except Exception:
+                pass
+            await upd.message.reply_text("🚫 Ошибка сети при сохранении. Попробуй позже.")
             return
 
         last_check_store.pop(user_id, None)
         await upd.message.reply_text(f"✅ Чек сохранён.\n🖼 {image_url}")
 
     async def _cmd_cancel(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Отмена: удаляем временный файл и очищаем память."""
         user_id = upd.effective_user.id
         data = last_check_store.pop(user_id, None)
         if data:
             tmp_path = data.get("tmp_path")
             if tmp_path and os.path.exists(tmp_path):
-                try: os.remove(tmp_path)
-                except Exception: pass
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
         await upd.message.reply_text("❎ Ок, не сохраняю. Можешь прислать новый чек через /receipt.")
 
-    # --- сообщения/фото ---
+    # --- произвольные сообщения/фото ---
 
     async def _handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        # обычные тексты не команды
-        await upd.message.reply_text("Используй меню команд или /receipt чтобы прислать фото чека.")
+        await upd.message.reply_text("Используй /receipt чтобы прислать фото чека, затем /save или /cancel.")
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Приходит фото — пересылаем его бэку на /api/bot/process-check."""
         try:
             user_id = upd.effective_user.id
-            waiting_for_photo.discard(user_id)
-
             photo = upd.message.photo[-1]
             file = await ctx.bot.get_file(photo.file_id)
             path = file.file_path
-            file_url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+            file_url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
 
             await upd.message.reply_text("🔍 Чек получен. Обрабатываю...")
 
@@ -219,7 +286,7 @@ class TelegramBot:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     "https://mixfom2025.fvds.ru/api/bot/process-check",
-                    json={"file_url": file_url, "user_id": user_id}
+                    json={"file_url": file_url, "user_id": user_id},
                 )
 
             if resp.status_code != 200:
@@ -238,10 +305,18 @@ class TelegramBot:
                 return
 
             text = render_receipt_text(result)
-            await upd.message.reply_text(escape(text) + "\n\nЧтобы сохранить — команда /save, чтобы отменить — /cancel.", parse_mode="HTML")
+
+            # ожидаем, что /process-check положил во временное хранилище структуру с tmp_*,
+            # либо сам result уже содержит, а роутер сделал сохранение в last_check_store.
+            # Здесь ничего не трогаем — просто просим подтвердить.
+            await upd.message.reply_text(
+                escape(text) + "\n\nЧтобы сохранить — /save, чтобы отменить — /cancel.",
+                parse_mode="HTML",
+            )
 
         except Exception:
             logger.exception("Ошибка при обработке фото")
-            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.")
+            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения. Попробуй ещё раз.")
 
+# экспорт для main.py
 bot = TelegramBot()
