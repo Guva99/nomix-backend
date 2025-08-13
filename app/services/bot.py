@@ -243,3 +243,5 @@ class TelegramBot:
         except Exception:
             logger.exception("Ошибка при обработке фото")
             await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.")
+
+bot = TelegramBot()
