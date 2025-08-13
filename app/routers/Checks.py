@@ -36,6 +36,12 @@ async def get_last_check(
     # Получаем последний чек из памяти
     last_check = last_check_store.get(user_id)
 
+    if not last_check:  # Если нет в памяти, пытаемся найти в базе
+        result = await db.execute(
+            select(ReceiptDB).where(ReceiptDB.user_id == user_id).order_by(ReceiptDB.id.desc()).limit(1)
+        )
+        last_check = result.scalar()
+
     # Получаем все сохранённые чеки из базы
     result = await db.execute(
         select(ReceiptDB).where(ReceiptDB.user_id == user_id).order_by(ReceiptDB.id.desc())
@@ -65,6 +71,7 @@ async def get_last_check(
     }
 
 
+
 @router.post("/save-check")
 async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get_db_session)):
     receipt = ReceiptDB(
@@ -74,6 +81,7 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
         time=payload.time or "",
         total=payload.total,
         currency=payload.currency,
+        image_url=payload.image_url
     )
 
     db.add(receipt)

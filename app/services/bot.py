@@ -3,30 +3,19 @@ import logging
 import base64
 import httpx
 import json
-import re
 import asyncio
 from collections import defaultdict
-from app.services.GPT import last_check_store
 from telegram.helpers import escape
 from telegram.error import BadRequest
-
 from telegram import (
-    Update,
-    MenuButtonWebApp,
-    WebAppInfo,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Bot
+    Update, MenuButtonWebApp, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, Bot, BotCommand
 )
 from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
+    Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ContextTypes, filters
 )
+
+from app.services.GPT import last_check_store
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +26,12 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
-# 🔄 Храним ID пользователей, от которых ждём фото
+PUBLIC_STATIC_BASE = "https://mixfom2025.fvds.ru/static/receipts"
+STATIC_RECEIPT_DIR = "/app/static/receipts"
+
 waiting_for_photo = set()
 
-
-def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+def render_receipt_text(receipt: dict) -> str:
     store = receipt.get("store", "Магазин")
     date = receipt.get("date", "")
     time = receipt.get("time", "")
@@ -50,67 +40,23 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     header = f"🛒 {store} — {date} {time}\n\n"
 
     categories = defaultdict(lambda: defaultdict(list))
-    for item in receipt["items"]:
+    for item in receipt.get("items", []):
         cat = item.get("category", "Прочее")
         subcat = item.get("subcategory") or "—"
         categories[cat][subcat].append((item["name"], item["price"]))
 
-    category_emojis = {
-        "Продукты": "🍔",
-        "Заведение": "🍽",
-        "Еда и напитки": "🍔",
-        "Здоровье": "💊",
-        "Транспорт": "🚗",
-        "Шопинг": "🛍",
-        "Прочее": "📦"
-    }
+    category_emojis = {"Продукты":"🍔","Заведение":"🍽","Еда и напитки":"🍔","Здоровье":"💊","Транспорт":"🚗","Шопинг":"🛍","Прочее":"📦"}
 
     body = ""
     for cat, subcats in categories.items():
         emoji = category_emojis.get(cat, "📦")
         cat_sum = sum(sum(price for _, price in items) for items in subcats.values())
-        body += f"{emoji} {cat}::::{cat_sum:,.2f}₽\n\n"
+        body += f"{emoji} {cat} — {cat_sum:,.2f} ₽\n"
         for subcat, items in subcats.items():
             subcat_sum = sum(price for _, price in items)
-            body += f"{subcat} === {subcat_sum:,.2f} ₽\n"
-            for i, (name, price) in enumerate(items, 1):
-                body += f"  {i}. {name:<22} {price:,.2f} ₽\n"
-            body += "—————————\n"
-
-    footer = "\n•••••••••••••••••••••••••\n"
-    footer += f"💰 Итого:              {total:,.2f} ₽"
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/approve"))],
-        [InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")]
-    ])
-    return header + body + footer, keyboard
-
-
-async def get_avatar_base64(user_id: int) -> str:
-    try:
-        bot = Bot(token=TOKEN)
-        photos = await bot.get_user_profile_photos(user_id, limit=1)
-        if photos.total_count == 0:
-            return None
-
-        file_obj = await bot.get_file(photos.photos[0][-1].file_id)
-        path = file_obj.file_path
-        url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                logger.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
-                return None
-
-            encoded = base64.b64encode(resp.content).decode("utf-8")
-            return f"data:image/jpeg;base64,{encoded}"
-
-    except Exception as e:
-        logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
-        return None
-
+            body += f"  {subcat}: {subcat_sum:,.2f} ₽\n"
+    footer = f"\n💰 Итого: {total:,.2f} ₽"
+    return header + body + footer
 
 class TelegramBot:
     def __init__(self) -> None:
@@ -119,22 +65,36 @@ class TelegramBot:
     async def initialize(self) -> None:
         if self.application:
             return
-
         self.application = ApplicationBuilder().token(TOKEN).build()
 
+        # мини‑апп — короткая подпись
         versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
         await self.application.bot.set_chat_menu_button(
             menu_button=MenuButtonWebApp(
-                text="📱 Отрыть приложение",
+                text="Open",  # короче и не «кричит»
                 web_app=WebAppInfo(url=versioned_url),
             )
         )
 
+        # команды в меню (иконка 9‑квадратиков)
+        await self.application.bot.set_my_commands([
+            BotCommand("start", "Начать"),
+            BotCommand("receipt", "Отправить фото чека"),
+            BotCommand("save", "Сохранить последний распознанный чек"),
+            BotCommand("cancel", "Отменить и удалить последний чек"),
+            BotCommand("stats", "Статистика"),
+        ])
+
+        # хендлеры
         self.application.add_handler(CommandHandler("start", self._cmd_start))
-        self.application.add_handler(CallbackQueryHandler(self._on_callback_confirm_save, pattern="^confirm_save$"))
-        self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
+        self.application.add_handler(CommandHandler("receipt", self._cmd_receipt))
+        self.application.add_handler(CommandHandler("save", self._cmd_save))
+        self.application.add_handler(CommandHandler("cancel", self._cmd_cancel))
+        self.application.add_handler(CommandHandler("stats", self._cmd_stats))
+
+        # больше НЕ используем confirm_save и тяжелые inline‑кнопки
         self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
-        self.application.add_handler(MessageHandler(filters.TEXT, self._handle_message))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
 
         await self.application.initialize()
         logger.info("Telegram bot initialized")
@@ -153,133 +113,95 @@ class TelegramBot:
         await self.initialize()
         await self.application.process_update(upd)
 
-    def _build_menu(self, exclude: list[str] = None) -> InlineKeyboardMarkup:
-        if exclude is None:
-            exclude = []
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-        buttons = []
-        if "app" not in exclude:
-            buttons.append([InlineKeyboardButton(
-                text="📱 Отрыть приложение",
-                web_app=WebAppInfo(url=versioned_url)
-            )])
-        row = []
-        if "stats" not in exclude:
-            row.append(InlineKeyboardButton(text="📈 Статистика", callback_data="stats"))
-        if "send_receipt" not in exclude:
-            row.append(InlineKeyboardButton(text="🧾 Чек", callback_data="send_receipt"))
-        if row:
-            buttons.append(row)
-        return InlineKeyboardMarkup(buttons)
+    # --- команды ---
 
     async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(
             chat_id=upd.effective_chat.id,
-            text="Выбери опцию:",
-            reply_markup=self._build_menu()
+            text="Привет! Используй меню команд (кнопка с квадратами) или:\n" \
+                 "/receipt — прислать фото чека\n/save — сохранить последний\n/cancel — отменить"
         )
 
-    from telegram.error import BadRequest
-    import asyncio
+    async def _cmd_stats(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        await upd.message.reply_text("Статистика пока в разработке.")
 
-    async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        query = upd.callback_query
-        user_id = query.from_user.id  # Получаем ID пользователя
+    async def _cmd_receipt(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        user_id = upd.effective_user.id
+        waiting_for_photo.add(user_id)
+        await upd.message.reply_text("📸 Пришли фото чека одним сообщением. После распознавания я попрошу подтвердить /save или /cancel.")
+        # мягкое напоминание
+        await asyncio.sleep(60)
+        if user_id in waiting_for_photo:
+            waiting_for_photo.discard(user_id)
+            await ctx.bot.send_message(chat_id=user_id, text="⏱ Не дождался фото. Команда /receipt чтобы попробовать снова.")
+
+    async def _cmd_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        user_id = upd.effective_user.id
+        data = last_check_store.get(user_id)
+        if not data:
+            await upd.message.reply_text("❌ Нет распознанного чека для сохранения.")
+            return
+
+        receipt = data.get("receipt") or {}
+        tmp_path = data.get("tmp_path")
+        tmp_name = data.get("tmp_name")
+        if not tmp_path or not os.path.exists(tmp_path):
+            await upd.message.reply_text("❌ Временный файл изображения не найден.")
+            last_check_store.pop(user_id, None)
+            return
+
+        # переносим файл в публичную статику
+        final_path = os.path.join(STATIC_RECEIPT_DIR, tmp_name)
+        try:
+            os.replace(tmp_path, final_path)  # атомарнее чем rename на некоторых FS
+        except Exception as e:
+            logger.exception("move image failed: %s", e)
+            await upd.message.reply_text("🚫 Не удалось сохранить изображение на сервере.")
+            return
+
+        image_url = f"{PUBLIC_STATIC_BASE}/{tmp_name}"
+        payload = {**receipt, "user_id": user_id, "image_url": image_url}
 
         try:
-            # Пытаемся ответить на callback query
-            await query.answer()
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post("https://mixfom2025.fvds.ru/api/receipts/save-check", json=payload)
+            if resp.status_code != 200:
+                detail = resp.text
+                try:
+                    detail = resp.json().get("detail") or detail
+                except Exception:
+                    pass
+                await upd.message.reply_text(f"🚫 Не удалось сохранить чек.\n{detail}")
+                # откат: удалим файл, чтобы не копился мусор
+                try: os.remove(final_path)
+                except Exception: pass
+                return
+        except Exception:
+            logger.exception("save-check request failed")
+            # откат файла
+            try: os.remove(final_path)
+            except Exception: pass
+            await upd.message.reply_text("🚫 Ошибка сети при сохранении.")
+            return
 
-            if query.data == "stats":
-                await query.message.reply_text("Эта опция ещё в разработке.",
-                                               reply_markup=self._build_menu(exclude=["stats"]))
+        last_check_store.pop(user_id, None)
+        await upd.message.reply_text(f"✅ Чек сохранён.\n🖼 {image_url}")
 
-            elif query.data == "send_receipt":
-                # Добавляем пользователя в список, ожидающих фото
-                waiting_for_photo.add(user_id)
+    async def _cmd_cancel(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        user_id = upd.effective_user.id
+        data = last_check_store.pop(user_id, None)
+        if data:
+            tmp_path = data.get("tmp_path")
+            if tmp_path and os.path.exists(tmp_path):
+                try: os.remove(tmp_path)
+                except Exception: pass
+        await upd.message.reply_text("❎ Ок, не сохраняю. Можешь прислать новый чек через /receipt.")
 
-                # Отправляем сообщение с просьбой прислать фото чека
-                await query.message.reply_text(
-                    "📸 Пришли фото чека, и я разберу его по полочкам 🧮",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔙 Вернуться в меню", callback_data="back_to_menu")]
-                    ])
-                )
-
-                # Ждем фото в течение 60 секунд
-                await asyncio.sleep(60)
-                if user_id in waiting_for_photo:
-                    waiting_for_photo.remove(user_id)
-                    # Если фото не прислано, напоминаем пользователю
-                    await ctx.bot.send_message(
-                        chat_id=user_id,
-                        text="⏱ Похоже, ты не прислал фото чека. Вернёмся в главное меню?",
-                        reply_markup=self._build_menu()
-                    )
-
-            elif query.data == "back_to_menu":
-                # Если нажата кнопка "Вернуться в меню"
-                waiting_for_photo.discard(user_id)
-                await query.message.reply_text("🔙 Вы вернулись в главное меню:", reply_markup=self._build_menu())
-
-            elif query.data == "go_home":
-                # Если нажата кнопка "Главное меню"
-                await query.message.reply_text("🔙 Главное меню:", reply_markup=self._build_menu())
-
-            else:
-                # Для любых других кнопок
-                await query.message.reply_text("Выбери опцию:", reply_markup=self._build_menu())
-
-        except BadRequest as e:
-            # Обработка ошибок, связанных с истечением времени запроса
-            if "Query is too old" in str(e):
-                await query.message.reply_text("⏱ Время на ответ истекло. Попробуйте снова.")
-            else:
-                # Если ошибка не связана с тайм-аутом, пробрасываем её дальше
-                logger.error(f"Ошибка обработки callback query: {e}")
-                await query.message.reply_text("❌ Произошла ошибка. Попробуйте снова.")
+    # --- сообщения/фото ---
 
     async def _handle_message(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        await upd.message.reply_text("📝 Я получил ваше сообщение!")
-
-    async def _on_callback_confirm_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        query = upd.callback_query
-        user_id = query.from_user.id
-        logger.info("[confirm_save] Нажата кнопка 'Сохранить' пользователем %s", user_id)
-
-        try:
-            await query.answer()
-            logger.info("[confirm_save] Callback query успешно подтвержден")
-
-            if user_id not in last_check_store:
-                logger.warning("[confirm_save] last_check_store не содержит данные для user_id=%s", user_id)
-                await query.message.reply_text("❌ Нет распознанного чека для сохранения.")
-                return
-
-            last_check = last_check_store[user_id]
-            logger.info("[confirm_save] Получены данные чека: %s", json.dumps(last_check, ensure_ascii=False))
-
-            async with httpx.AsyncClient() as client:
-                save_resp = await client.post(
-                    "https://mixfom2025.fvds.ru/api/receipts/save-check",
-                    json={**last_check, "user_id": user_id}
-                )
-                logger.info("[confirm_save] Ответ от /save-check: %s %s", save_resp.status_code, save_resp.text)
-
-            if save_resp.status_code != 200:
-                try:
-                    detail = save_resp.json().get("detail") or save_resp.text
-                except Exception:
-                    detail = save_resp.text
-                await query.message.reply_text(f"🚫 Не удалось сохранить чек.\n\n{detail}")
-                return
-
-            await query.message.reply_text("✅ Чек успешно сохранён!")
-            logger.info("[confirm_save] Чек успешно сохранён пользователем %s", user_id)
-
-        except Exception as e:
-            logger.exception("[confirm_save] Ошибка при сохранении чека: %s", str(e))
-            await query.message.reply_text("🚫 Произошла ошибка при сохранении. Попробуйте позже.")
+        # обычные тексты не команды
+        await upd.message.reply_text("Используй меню команд или /receipt чтобы прислать фото чека.")
 
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
@@ -288,10 +210,10 @@ class TelegramBot:
 
             photo = upd.message.photo[-1]
             file = await ctx.bot.get_file(photo.file_id)
-
             path = file.file_path
             file_url = path if path.startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
-            await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...")
+
+            await upd.message.reply_text("🔍 Чек получен. Обрабатываю...")
 
             timeout = httpx.Timeout(120.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -301,7 +223,7 @@ class TelegramBot:
                 )
 
             if resp.status_code != 200:
-                await upd.message.reply_text("❌ Произошла ошибка при обработке чека.")
+                await upd.message.reply_text("❌ Ошибка при обработке чека.")
                 return
 
             data = resp.json()
@@ -311,16 +233,13 @@ class TelegramBot:
                 return
 
             if not result.get("is_receipt", False):
-                reason = result.get("reason", "Не удалось определить, что на изображении.")
-                await upd.message.reply_text(f"🚫 Это не чек.\nПричина: {reason}")
+                reason = result.get("reason", "Не смог распознать чек на фото.")
+                await upd.message.reply_text(f"🚫 Это не чек. Причина: {reason}")
                 return
 
-            text, keyboard = render_receipt_message(result, user_id)
-            await upd.message.reply_text(escape(text), reply_markup=keyboard, parse_mode="HTML")
+            text = render_receipt_text(result)
+            await upd.message.reply_text(escape(text) + "\n\nЧтобы сохранить — команда /save, чтобы отменить — /cancel.", parse_mode="HTML")
 
         except Exception:
             logger.exception("Ошибка при обработке фото")
             await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.")
-
-
-bot = TelegramBot()
