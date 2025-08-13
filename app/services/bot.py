@@ -4,6 +4,8 @@ import os
 import shutil
 import logging
 import base64
+from urllib.parse import urlparse
+
 import httpx
 import json
 import asyncio
@@ -274,35 +276,89 @@ class TelegramBot:
             await target.reply_text("❌ Нет распознанного чека для сохранения.", reply_markup=reply_keyboard())
             return
 
-        # Попробуем перевести временный файл из tmp -> receipts
-        try:
-            image_url = st.get("image_url") or ""
-            filename = os.path.basename(image_url)
+        # ------- определить имя файла и исходный путь -------
+        image_url = (st.get("image_url") or "").strip()
+        filename = (st.get("image_filename") or "").strip()
 
-            # возможные источники
+        # 1) если filename не передали — достанем из URL
+        if not filename:
+            try:
+                path_part = urlparse(image_url).path
+                filename = os.path.basename(path_part.rstrip("/"))
+            except Exception:
+                filename = ""
+
+        # 2) если всё ещё пусто/‘tmp’ — найдём самый свежий temp-файл пользователя
+        def find_latest_tmp(prefix_dir: str) -> str | None:
+            if not os.path.isdir(prefix_dir):
+                return None
             candidates = [
-                os.path.join(RECEIPTS_TMP_NEW, filename),  # /app/static/receipts/tmp/xxx.jpg
-                os.path.join(RECEIPTS_TMP_OLD, filename),  # /app/static/tmp/xxx.jpg (старый путь)
+                f for f in os.listdir(prefix_dir)
+                if f.startswith(f"user_{user_id}_") and os.path.isfile(os.path.join(prefix_dir, f))
             ]
-            src_path = next((p for p in candidates if p and os.path.exists(p)), None)
-            if src_path:
-                dst_path = os.path.join(RECEIPTS_ROOT, filename)
-                os.makedirs(RECEIPTS_ROOT, exist_ok=True)
-                shutil.move(src_path, dst_path)  # безопасно для разных ФС
-                # обновим URL
-                st["image_url"] = (
-                    image_url.replace("/static/receipts/tmp/", "/static/receipts/")
-                    .replace("/static/tmp/", "/static/receipts/")
-                )
+            if not candidates:
+                return None
+            candidates.sort(key=lambda f: os.path.getmtime(os.path.join(prefix_dir, f)), reverse=True)
+            return candidates[0]
 
-        except Exception as e:
-            logger.error("move image failed: %s", e, exc_info=True)
+        if not filename or filename.lower() == "tmp":
+            filename = find_latest_tmp(RECEIPTS_TMP_NEW) or find_latest_tmp(RECEIPTS_TMP_OLD) or filename
+
+        if not filename or filename.lower() == "tmp":
             await target.reply_text(
-                "🚫 Не удалось сохранить файл изображения. Попробуйте ещё раз.", reply_markup=reply_keyboard()
+                "🚫 Не удалось определить файл изображения для сохранения. Попробуй отправить чек ещё раз.",
+                reply_markup=reply_keyboard(),
             )
             return
 
-        # сохраним чек в бэкенд
+        # Возможные места, где лежит временный файл
+        src_candidates = [
+            os.path.join(RECEIPTS_TMP_NEW, filename),  # /app/static/receipts/tmp/<file>
+            os.path.join(RECEIPTS_TMP_OLD, filename),  # /app/static/tmp/<file> (старый путь)
+        ]
+        # Куда перемещаем
+        final_path = os.path.join(RECEIPTS_ROOT, filename)
+
+        # 3) если файл уже лежит в конечной папке — просто используем его
+        if os.path.isfile(final_path):
+            moved = True
+        else:
+            # ищем исходник среди кандидатов
+            src_path = next((p for p in src_candidates if os.path.isfile(p)), None)
+            moved = False
+            if src_path:
+                try:
+                    os.makedirs(RECEIPTS_ROOT, exist_ok=True)
+                    # безопасно для разных ФС
+                    shutil.move(src_path, final_path)
+                    moved = True
+                except Exception as e:
+                    logger.error("move image failed: %s", e, exc_info=True)
+            else:
+                logger.warning("Temp file not found for %s (candidates: %s)", filename, src_candidates)
+
+        if not moved:
+            await target.reply_text(
+                "🚫 Не удалось перенести изображение из временной папки. Попробуй ещё раз.",
+                reply_markup=reply_keyboard(),
+            )
+            return
+
+        # Обновим URL на «боевой»
+        # подменим любой tmp-сегмент на /static/receipts/
+        good_url = image_url or ""
+        if "/static/receipts/tmp/" in good_url:
+            good_url = good_url.replace("/static/receipts/tmp/", "/static/receipts/")
+        elif "/static/tmp/" in good_url:
+            good_url = good_url.replace("/static/tmp/", "/static/receipts/")
+        # если URL пустой или странный — сформируем его заново
+        if not good_url or good_url.endswith("/tmp") or good_url.endswith("/tmp/"):
+            good_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
+
+        st["image_url"] = good_url
+        st["image_filename"] = filename  # заодно положим имя файла в стор
+
+        # ------- сохранить чек в БД через API -------
         try:
             payload = {**st, "user_id": user_id}
             async with httpx.AsyncClient() as client:
