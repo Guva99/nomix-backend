@@ -360,24 +360,64 @@ class TelegramBot:
 
         # ------- сохранить чек в БД через API -------
         try:
-            payload = {**st, "user_id": user_id}
-            async with httpx.AsyncClient() as client:
-                save_resp = await client.post("https://mixfom2025.fvds.ru/api/receipts/save-check", json=payload)
-            if save_resp.status_code != 200:
-                detail = save_resp.text
-                try:
-                    detail = save_resp.json().get("detail") or detail
-                except Exception:
-                    pass
-                await target.reply_text(f"🚫 Не удалось сохранить чек.\n\n{detail}", reply_markup=reply_keyboard())
+            # поддерживаем оба формата: {"receipt": {...}} и плоский словарь
+            raw_receipt = st.get("receipt") if isinstance(st, dict) and "receipt" in st else st
+            if not isinstance(raw_receipt, dict):
+                await target.reply_text(
+                    "🚫 Формат данных чека неверный. Пришли фото ещё раз.",
+                    reply_markup=reply_keyboard()
+                )
                 return
+
+            payload = {**raw_receipt, "user_id": user_id}
+            logger.info("[save] payload: %s", json.dumps(payload, ensure_ascii=False))
+
+            async with httpx.AsyncClient() as client:
+                save_resp = await client.post(
+                    "https://mixfom2025.fvds.ru/api/receipts/save-check",
+                    json=payload
+                )
+
+            if save_resp.status_code != 200:
+                # компактное извлечение причины
+                brief = f"HTTP {save_resp.status_code}"
+                try:
+                    j = save_resp.json()
+                    logger.info("[save] 422 detail: %s", json.dumps(j, ensure_ascii=False))
+                    if isinstance(j, dict) and "detail" in j:
+                        det = j["detail"]
+                        if isinstance(det, list):
+                            parts = []
+                            for e in det:
+                                loc = ".".join(str(x) for x in (e.get("loc") or []))
+                                msg = e.get("msg") or e.get("type") or ""
+                                parts.append(f"{loc}: {msg}")
+                            brief = "; ".join(parts) or brief
+                        else:
+                            brief = str(det)
+                    else:
+                        txt_json = json.dumps(j, ensure_ascii=False)
+                        brief = (txt_json[:900] + "…") if len(txt_json) > 900 else txt_json
+                except Exception:
+                    txt = save_resp.text.strip()
+                    brief = (txt[:900] + "…") if len(txt) > 900 else txt
+
+                await target.reply_text(
+                    f"🚫 Не удалось сохранить чек.\n{brief}",
+                    reply_markup=reply_keyboard()
+                )
+                return
+
         except Exception as e:
-            logger.exception("[save] http error: %s", e)
-            await target.reply_text("🚫 Ошибка при сохранении. Попробуйте позже.", reply_markup=reply_keyboard())
+            logger.error("[save] unexpected error: %s", e, exc_info=True)
+            await target.reply_text(
+                "🚫 Произошла ошибка при сохранении чека.",
+                reply_markup=reply_keyboard()
+            )
             return
 
+        # сюда попадём только при успешном сохранении
         await target.reply_text("✅ Чек сохранён!", reply_markup=reply_keyboard())
-
     # ====== Фото чека ======
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
