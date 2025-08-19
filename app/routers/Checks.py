@@ -141,3 +141,54 @@ async def edit_saved_check(id: int, db: AsyncSession = Depends(get_db_session)):
         "items": [item.__dict__ for item in items]
     }
 
+
+@router.get("/saved-checks")
+async def get_saved_checks(
+    user_id: int = Query(...),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    include_items: bool = Query(False),
+    db: AsyncSession = Depends(get_db_session),
+):
+    # вернуть только сохранённые чеки
+    q = (
+        select(ReceiptDB)
+        .where(ReceiptDB.user_id == user_id)
+        .order_by(ReceiptDB.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    result = await db.execute(q)
+    receipts = result.scalars().all()
+
+    data = []
+    for r in receipts:
+        row = {
+            "id": r.id,
+            "store": r.store,
+            "date": r.date,
+            "time": r.time,
+            "total": r.total,
+            "currency": r.currency,
+            "image_url": r.image_url,
+        }
+        if include_items:
+            items_result = await db.execute(
+                select(ReceiptItemDB).where(ReceiptItemDB.receipt_id == r.id)
+            )
+            items = items_result.scalars().all()
+            row["items"] = [
+                {
+                    "id": it.id,
+                    "receipt_id": it.receipt_id,
+                    "name": it.name,
+                    "price": it.price,
+                    "category": it.category,
+                    "category_id": it.category_id,
+                    "subcategory": it.subcategory,
+                    "subcategory_id": it.subcategory_id,
+                } for it in items
+            ]
+        data.append(row)
+
+    return {"saved_checks": data, "limit": limit, "offset": offset}
