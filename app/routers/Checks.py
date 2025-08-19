@@ -1,5 +1,6 @@
 import os
 from fastapi import APIRouter, Query, HTTPException, Depends
+from datetime import date, timedelta
 
 import logging
 from app.models.saved_check import SaveReceiptPayload
@@ -145,25 +146,42 @@ async def edit_saved_check(id: int, db: AsyncSession = Depends(get_db_session)):
 @router.get("/saved-checks")
 async def get_saved_checks(
     user_id: int = Query(...),
-    limit: int = Query(20, ge=1, le=200),
-    offset: int = Query(0, ge=0),
-    include_items: bool = Query(False),
+    period: str = Query("month", pattern="^(day|week|month|year)$"),
     db: AsyncSession = Depends(get_db_session),
 ):
-    # вернуть только сохранённые чеки
+    # вычисляем начало периода относительно сегодняшнего дня
+    today = date.today()
+
+    if period == "day":
+        start = today
+    elif period == "week":
+        # понедельник текущей недели
+        start = today - timedelta(days=today.weekday())
+    elif period == "month":
+        start = date(today.year, today.month, 1)
+    elif period == "year":
+        start = date(today.year, 1, 1)
+    else:
+        # защита, хотя pattern уже ограничивает
+        start = date(today.year, today.month, 1)
+
+    start_str = start.isoformat()  # "YYYY-MM-DD" — подходит к типу String в БД
+
+    # выбираем только чеки пользователя за период
     q = (
         select(ReceiptDB)
-        .where(ReceiptDB.user_id == user_id)
-        .order_by(ReceiptDB.id.desc())
-        .offset(offset)
-        .limit(limit)
+        .where(
+            (ReceiptDB.user_id == user_id) &
+            (ReceiptDB.date >= start_str)   # даты в БД в формате "YYYY-MM-DD"
+        )
+        .order_by(ReceiptDB.date.desc(), ReceiptDB.id.desc())
     )
     result = await db.execute(q)
     receipts = result.scalars().all()
 
-    data = []
-    for r in receipts:
-        row = {
+    # легкий ответ без items (он может быть тяжёлым)
+    data = [
+        {
             "id": r.id,
             "store": r.store,
             "date": r.date,
@@ -172,23 +190,14 @@ async def get_saved_checks(
             "currency": r.currency,
             "image_url": r.image_url,
         }
-        if include_items:
-            items_result = await db.execute(
-                select(ReceiptItemDB).where(ReceiptItemDB.receipt_id == r.id)
-            )
-            items = items_result.scalars().all()
-            row["items"] = [
-                {
-                    "id": it.id,
-                    "receipt_id": it.receipt_id,
-                    "name": it.name,
-                    "price": it.price,
-                    "category": it.category,
-                    "category_id": it.category_id,
-                    "subcategory": it.subcategory,
-                    "subcategory_id": it.subcategory_id,
-                } for it in items
-            ]
-        data.append(row)
+        for r in receipts
+    ]
 
-    return {"saved_checks": data, "limit": limit, "offset": offset}
+    return {
+        "period": period,
+        "from_date": start_str,
+        "to_date": today.isoformat(),
+        "saved_checks": data,
+        "count": len(data),
+        "total_amount": round(sum((r.total or 0) for r in receipts), 2),
+    }
