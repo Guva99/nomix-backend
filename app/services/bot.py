@@ -420,17 +420,27 @@ class TelegramBot:
         await target.reply_text("✅ Чек сохранён!", reply_markup=reply_keyboard())
     # ====== Фото чека ======
     async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        try:
-            user_id = upd.effective_user.id
-            waiting_for_photo.discard(user_id)
+        user_id = upd.effective_user.id
+        waiting_for_photo.discard(user_id)
 
+        try:
             photo = upd.message.photo[-1]
             file = await ctx.bot.get_file(photo.file_id)
-
             path = file.file_path
             file_url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+
+            # Сообщаем сразу, что начали обработку
             await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...", reply_markup=reply_keyboard())
 
+            # Всё, что может быть долго — в отдельном task
+            asyncio.create_task(self._process_check_in_background(file_url, user_id, upd.message))
+
+        except Exception:
+            logger.exception("Ошибка при обработке фото")
+            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
+
+    async def _process_check_in_background(self, file_url: str, user_id: int, message):
+        try:
             timeout = httpx.Timeout(120.0)
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
@@ -439,26 +449,26 @@ class TelegramBot:
                 )
 
             if resp.status_code != 200:
-                await upd.message.reply_text("❌ Произошла ошибка при обработке чека.", reply_markup=reply_keyboard())
+                await message.reply_text("❌ Произошла ошибка при обработке чека.", reply_markup=reply_keyboard())
                 return
 
             data = resp.json()
             result = data.get("result")
             if not result:
-                await upd.message.reply_text("❌ Пустой результат от сервера.", reply_markup=reply_keyboard())
+                await message.reply_text("❌ Пустой результат от сервера.", reply_markup=reply_keyboard())
                 return
 
             if not result.get("is_receipt", False):
                 reason = result.get("reason", "Не удалось определить, что на изображении.")
-                await upd.message.reply_text(f"🚫 Это не чек.\nПричина: {reason}", reply_markup=reply_keyboard())
+                await message.reply_text(f"🚫 Это не чек.\nПричина: {reason}", reply_markup=reply_keyboard())
                 return
 
             text, keyboard = render_receipt_message(result, user_id)
-            await upd.message.reply_text(escape(text), reply_markup=keyboard, parse_mode="HTML")
+            await message.reply_text(escape(text), reply_markup=keyboard, parse_mode="HTML")
 
         except Exception:
-            logger.exception("Ошибка при обработке фото")
-            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
+            logger.exception("Ошибка при фоновой обработке чека")
+            await message.reply_text("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
 
 
 bot = TelegramBot()
