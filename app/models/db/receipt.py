@@ -18,16 +18,3 @@ class ReceiptDB(Base):
     items = relationship("ReceiptItemDB", back_populates="receipt", cascade="all, delete-orphan")
 
 
-class ReceiptItemDB(Base):
-    __tablename__ = "receipt_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    receipt_id = Column(Integer, ForeignKey("receipts.id"))
-    name = Column(String)
-    price = Column(Float)
-    category = Column(String)
-    category_id = Column(Integer)
-    subcategory = Column(String)
-    subcategory_id = Column(Integer)
-
-    receipt = relationship("ReceiptDB", back_populates="items")
