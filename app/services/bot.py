@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import base64
 
 import httpx
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -16,6 +16,7 @@ from aiogram.types import (
     MenuButtonWebApp
 )
 from aiogram.filters import Command
+from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest
 
 from app.services.GPT import last_check_store  # твой store
@@ -117,7 +118,7 @@ async def cmd_save(message: types.Message):
     await save_check(user_id, st, message)
 
 # ====== Текстовые кнопки ======
-@dp.message()
+@dp.message(F.text)
 async def handle_text(message: types.Message):
     text = (message.text or "").lower()
     user_id = message.from_user.id
@@ -154,16 +155,40 @@ async def handle_callback(query: types.CallbackQuery):
         await query.message.reply("Выбери опцию:", reply_markup=reply_keyboard())
 
 # ====== Фото ======
-@dp.message(types.ContentType.PHOTO)
-async def handle_photo(message: types.Message):
+@dp.message(F.photo)
+async def handle_photo(message: Message):
     user_id = message.from_user.id
-    waiting_for_photo.discard(user_id)
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
 
-    await message.reply("🔍 Чек получен. Начинаю обработку...", reply_markup=reply_keyboard())
-    asyncio.create_task(process_check_background(file_url, user_id, message))
+    try:
+        # Берём лучшее качество фото
+        photo = message.photo[-1]
+        file_id = photo.file_id
+        file = await bot.get_file(file_id)
+
+        # Локальное временное сохранение
+        filename = f"user_{user_id}_{file_id}.jpg"
+        tmp_path = os.path.join(RECEIPTS_TMP_NEW, filename)
+
+        await bot.download_file(file.file_path, destination=tmp_path)
+
+        await message.answer("📤 Чек получен. Отправляю на распознавание...")
+
+        # Генерируем URL (если ты отдаёшь статику через nginx)
+        file_url = f"https://mixfom2025.fvds.ru/static/receipts/tmp/{filename}"
+
+        # Сохраняем в store (чтобы потом можно было /save)
+        last_check_store[user_id] = {
+            "image_filename": filename,
+            "image_url": file_url,
+        }
+
+        # Запускаем фоновой анализ (GPT → бэкенд)
+        asyncio.create_task(process_check_background(file_url, user_id, message))
+
+    except Exception as e:
+        logger.exception("Ошибка при приёме фото")
+        await message.reply("🚫 Ошибка при загрузке фото.")
+
 
 # ====== Фоновая обработка чека ======
 async def process_check_background(file_url: str, user_id: int, message: types.Message):
