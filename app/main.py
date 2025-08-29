@@ -81,50 +81,21 @@ async def on_startup():
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
-        # Получаем сырые данные для логирования
-        raw_body = await request.body()
-        logger.info(f"Raw webhook data: {raw_body.decode()}")
+        update_data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse(content={"ok": False, "error": "Invalid JSON"}, status_code=400)
 
-        try:
-            update_data = await request.json()
-        except json.JSONDecodeError as je:
-            logger.error(f"JSON decode error: {je}")
-            return JSONResponse(
-                content={"ok": False, "error": "Invalid JSON"},
-                status_code=400
-            )
+    try:
+        # Создаём объект Update
+        update = Update.de_json(update_data, bot.application.bot)
+    except Exception:
+        return JSONResponse(content={"ok": False, "error": "Invalid update format"}, status_code=400)
 
-        # Валидация обязательных полей
-        if not update_data.get('update_id'):
-            logger.error("Missing update_id in payload")
-            return JSONResponse(
-                content={"ok": False, "error": "Missing update_id"},
-                status_code=400
-            )
+    # ==== Фоновая обработка ====
+    asyncio.create_task(bot.process_update(update))
 
-        # Создаем объект Update
-        try:
-            update = Update.de_json(update_data, bot.application.bot)
-            if not update:
-                raise ValueError("Empty update object")
-        except Exception as e:
-            logger.error(f"Update parsing error: {e}")
-            return JSONResponse(
-                content={"ok": False, "error": "Invalid update format"},
-                status_code=400
-            )
-
-        # Обработка update
-        try:
-            await bot.process_update(update)
-            return {"ok": True}
-        except Exception as e:
-            logger.error(f"Update processing error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-    except Exception as e:
-        logger.exception("Unexpected error in webhook")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    # Отправляем Telegram сразу 200 OK
+    return {"ok": True}
 
 
 @app.get("/health")
