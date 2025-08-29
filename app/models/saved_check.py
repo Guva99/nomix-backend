@@ -3,6 +3,7 @@ from pydantic import BaseModel, field_validator
 
 NumberLike = Union[int, float, str]
 
+# models/saved_check.py
 class ReceiptItem(BaseModel):
     name: str
     price: float
@@ -10,8 +11,8 @@ class ReceiptItem(BaseModel):
     category_id: int = 0
     subcategory: Optional[str] = ""
     subcategory_id: int = 0
+    product_id: Optional[int] = None  # <-- новое поле
 
-    # --- коэрсинг строки с запятой/пробелами в float ---
     @field_validator("price", mode="before")
     @classmethod
     def _cast_price(cls, v: NumberLike):

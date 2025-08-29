@@ -13,6 +13,7 @@ from app.routers.auth import router as login
 from app.routers.data import router as data
 from app.routers.gpt import router as gpt
 from app.routers.Checks import router as checks
+from app.routers.products import router as products
 from alembic.config import Config
 from alembic import command
 
@@ -40,10 +41,11 @@ ALLOWED_ORIGINS = [
 ]
 
 # Роутеры
-app.include_router(login, prefix="/api/telegram", tags=["telegram"])
+app.include_router(login, prefix="/api/telegram", tags=["Telegram"])
 app.include_router(data, prefix="/api/data", tags=["Database"])
 app.include_router(gpt, prefix="/api/bot", tags=["GPT"])
 app.include_router(checks, prefix="/api/receipts", tags=["Receipts"])
+app.include_router(products, prefix="/api", tags=["Products"])
 
 
 

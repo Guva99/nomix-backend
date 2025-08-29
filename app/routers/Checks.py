@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from datetime import date, timedelta
 
 import logging
+from app.models.db.product import ProductDB
 from app.models.saved_check import SaveReceiptPayload
 from app.core.database import get_db_session
 from app.models.db.receipt import ReceiptDB, ReceiptItemDB
@@ -75,6 +76,7 @@ async def get_last_check(
 
 @router.post("/save-check")
 async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get_db_session)):
+    # создаём сам чек
     receipt = ReceiptDB(
         user_id=payload.user_id,
         store=payload.store,
@@ -82,22 +84,39 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
         time=payload.time or "",
         total=payload.total,
         currency=payload.currency,
-        image_url=payload.image_url
+        image_url=payload.image_url,
     )
-
     db.add(receipt)
-    await db.flush()
+    await db.flush()  # получаем id чека
 
     for item in payload.items:
-        db.add(ReceiptItemDB(
+        # нормализуем имя (чтобы не плодить дубликаты типа "Cola" vs "cola ")
+        normalized_name = item.name.strip().lower()
+
+        result = await db.execute(
+            select(ProductDB).where(ProductDB.name.ilike(normalized_name))
+        )
+        product = result.scalar()
+
+        if not product:
+            # создаём новый продукт
+            product = ProductDB(
+                name=item.name.strip(),
+                category=item.category,
+                category_id=item.category_id,
+                subcategory=item.subcategory,
+                subcategory_id=item.subcategory_id,
+            )
+            db.add(product)
+            await db.flush()
+
+        # создаём запись о товаре в чеке
+        receipt_item = ReceiptItemDB(
             receipt_id=receipt.id,
-            name=item.name,
+            product_id=product.id,
             price=item.price,
-            category=item.category,
-            category_id=item.category_id,
-            subcategory=item.subcategory or "",
-            subcategory_id=item.subcategory_id
-        ))
+        )
+        db.add(receipt_item)
 
     await db.commit()
     return {"status": "ok"}
