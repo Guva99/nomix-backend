@@ -1,38 +1,24 @@
-from __future__ import annotations
-
 import os
-import shutil
 import logging
-import base64
-from urllib.parse import urlparse
-
-import httpx
-import json
+import shutil
 import asyncio
 from collections import defaultdict
+from urllib.parse import urlparse
+import base64
 
-from app.services.GPT import last_check_store
-from telegram.helpers import escape
-from telegram.error import BadRequest
-
-from telegram import (
-    Update,
-    MenuButtonWebApp,
-    WebAppInfo,
-    InlineKeyboardButton,
+import httpx
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import (
     InlineKeyboardMarkup,
-    Bot,
+    InlineKeyboardButton,
     ReplyKeyboardMarkup,
+    WebAppInfo,
+    MenuButtonWebApp
 )
-from telegram.ext import (
-    Application,
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from aiogram.filters import Command
+from aiogram.exceptions import TelegramBadRequest
+
+from app.services.GPT import last_check_store  # твой store
 
 logger = logging.getLogger(__name__)
 
@@ -43,30 +29,38 @@ if not TOKEN:
 WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru/api/telegram/")
 BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
 
-# Файловые пути (оба внутри одного тома)
 RECEIPTS_ROOT = "/app/static/receipts"
-RECEIPTS_TMP_NEW = os.path.join(RECEIPTS_ROOT, "tmp")
-RECEIPTS_TMP_OLD = "/app/static/tmp"  # поддержим старую схему на всякий случай
+RECEIPTS_TMP_NEW = f"{RECEIPTS_ROOT}/tmp"
+RECEIPTS_TMP_OLD = "/app/static/tmp"
+
 os.makedirs(RECEIPTS_ROOT, exist_ok=True)
 os.makedirs(RECEIPTS_TMP_NEW, exist_ok=True)
 
-# 🔄 Храним ID пользователей, от которых ждём фото
 waiting_for_photo = set()
 
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
+# ====== Клавиатуры ======
 def reply_keyboard() -> ReplyKeyboardMarkup:
-    # Кнопки под полем ввода (как на твоих скринах)
     return ReplyKeyboardMarkup(
         keyboard=[
             ["🧾 Чек", "📈 Статистика"],
-            ["❓ Все команды"],
+            ["❓ Все команды"]
         ],
         resize_keyboard=True,
-        is_persistent=True,
+        persistent=True,
     )
 
+def build_inline_keyboard(user_id: int):
+    versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url=f"https://nomix-d6199.web.app/approve"))],
+        [InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")]
+    ])
 
-def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+# ====== Рендер чека ======
+def render_receipt_message(receipt: dict, user_id: int):
     store = receipt.get("store", "Магазин")
     date = receipt.get("date", "")
     time = receipt.get("time", "")
@@ -75,7 +69,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     header = f"🛒 {store} — {date} {time}\n\n"
 
     categories = defaultdict(lambda: defaultdict(list))
-    for item in receipt["items"]:
+    for item in receipt.get("items", []):
         cat = item.get("category", "Прочее")
         subcat = item.get("subcategory") or "—"
         categories[cat][subcat].append((item["name"], item["price"]))
@@ -105,370 +99,163 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     footer = "\n•••••••••••••••••••••••••\n"
     footer += f"💰 Итого:              {total:,.2f} ₽"
 
-    keyboard = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/approve"))],
-            [InlineKeyboardButton("✅ Сохранить", callback_data="confirm_save")],
-        ]
-    )
+    keyboard = build_inline_keyboard(user_id)
     return header + body + footer, keyboard
 
+# ====== Команды ======
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer("Выбери опцию (кнопки под полем ввода):", reply_markup=reply_keyboard())
 
-async def get_avatar_base64(user_id: int) -> str | None:
-    try:
-        bot = Bot(token=TOKEN)
-        photos = await bot.get_user_profile_photos(user_id, limit=1)
-        if photos.total_count == 0:
-            return None
+@dp.message(Command("save"))
+async def cmd_save(message: types.Message):
+    user_id = message.from_user.id
+    st = last_check_store.get(user_id)
+    if not st:
+        await message.reply("❌ Нет распознанного чека для сохранения.", reply_markup=reply_keyboard())
+        return
+    await save_check(user_id, st, message)
 
-        file_obj = await bot.get_file(photos.photos[0][-1].file_id)
-        path = file_obj.file_path
-        url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+# ====== Текстовые кнопки ======
+@dp.message()
+async def handle_text(message: types.Message):
+    text = (message.text or "").lower()
+    user_id = message.from_user.id
+    if "чек" in text:
+        waiting_for_photo.add(user_id)
+        await message.reply("📸 Пришли фото чека — разберу его 🧮", reply_markup=reply_keyboard())
+    elif "статист" in text:
+        await message.reply("📈 Раздел в разработке.", reply_markup=reply_keyboard())
+    elif "команд" in text:
+        await message.reply("Доступно: 🧾 Чек, 📈 Статистика, /save — сохранить последний чек.", reply_markup=reply_keyboard())
+    else:
+        await message.reply("Не понял. Нажми кнопку ниже 👇", reply_markup=reply_keyboard())
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                logger.error(f"[get_avatar_base64] Failed to download {url}: {resp.status_code}")
-                return None
-
-            encoded = base64.b64encode(resp.content).decode("utf-8")
-            return f"data:image/jpeg;base64,{encoded}"
-
-    except Exception as e:
-        logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
-        return None
-
-
-class TelegramBot:
-    def __init__(self) -> None:
-        self.application: Application | None = None
-
-    async def initialize(self) -> None:
-        if self.application:
-            return
-
-        self.application = ApplicationBuilder().token(TOKEN).build()
-
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-        # маленькая кнопка слева у поля ввода
-        await self.application.bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(text="Open", web_app=WebAppInfo(url=versioned_url))
-        )
-
-        # команды
-        self.application.add_handler(CommandHandler("start", self._cmd_start))
-        self.application.add_handler(CommandHandler("save", self._cmd_save))  # вручную сохранить последний чек
-
-        # callback'и
-        self.application.add_handler(CallbackQueryHandler(self._on_callback_confirm_save, pattern="^confirm_save$"))
-        self.application.add_handler(CallbackQueryHandler(self._on_menu_selection))
-
-        # входящие
-        self.application.add_handler(MessageHandler(filters.PHOTO, self._handle_photo))
-        self.application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self._handle_text_buttons))
-
-        await self.application.initialize()
-        logger.info("Telegram bot initialized")
-
-    async def setup_webhook(self) -> None:
-        await self.initialize()
-        webhook_url = os.getenv("WEBHOOK_URL", f"{WEBAPP_BASE_URL}webhook")
-        info = await self.application.bot.get_webhook_info()
-        if info.url != webhook_url:
-            await self.application.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
-            logger.info("Webhook configured: %s", webhook_url)
-        else:
-            logger.info("Webhook already at %s – skip", webhook_url)
-
-    async def process_update(self, upd: Update) -> None:
-        await self.initialize()
-        await self.application.process_update(upd)
-
-    # ====== UI ======
-    def _build_menu(self, exclude: list[str] | None = None) -> InlineKeyboardMarkup:
-        # оставим на всякий случай (используется в старых местах)
-        if exclude is None:
-            exclude = []
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-        buttons = []
-        if "app" not in exclude:
-            buttons.append(
-                [
-                    InlineKeyboardButton(text="📱 Отрыть приложение", web_app=WebAppInfo(url=versioned_url)),
-                ]
-            )
-        row = []
-        if "stats" not in exclude:
-            row.append(InlineKeyboardButton(text="📈 Статистика", callback_data="stats"))
-        if "send_receipt" not in exclude:
-            row.append(InlineKeyboardButton(text="🧾 Чек", callback_data="send_receipt"))
-        if row:
-            buttons.append(row)
-        return InlineKeyboardMarkup(buttons)
-
-    async def _cmd_start(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        await ctx.bot.send_message(
-            chat_id=upd.effective_chat.id,
-            text="Выбери опцию (кнопки под полем ввода):",
-            reply_markup=reply_keyboard(),
-        )
-
-    async def _handle_text_buttons(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        text = (upd.message.text or "").strip().lower()
-        if "чек" in text:
-            waiting_for_photo.add(upd.effective_user.id)
-            await upd.message.reply_text("📸 Пришли фото чека — разберу его 🧮", reply_markup=reply_keyboard())
-        elif "статист" in text:
-            await upd.message.reply_text("📈 Раздел в разработке.", reply_markup=reply_keyboard())
-        elif "команд" in text:
-            await upd.message.reply_text(
-                "Доступно: 🧾 Чек, 📈 Статистика, /save — сохранить последний чек.", reply_markup=reply_keyboard()
-            )
-        else:
-            await upd.message.reply_text("Не понял. Нажми кнопку ниже 👇", reply_markup=reply_keyboard())
-
-    async def _on_menu_selection(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        query = upd.callback_query
-        user_id = query.from_user.id
-        try:
-            await query.answer()
-
-            if query.data == "stats":
-                await query.message.reply_text("Эта опция ещё в разработке.", reply_markup=reply_keyboard())
-
-            elif query.data == "send_receipt":
-                waiting_for_photo.add(user_id)
-                await query.message.reply_text("📸 Пришли фото чека — разберу его 🧮", reply_markup=reply_keyboard())
-                await asyncio.sleep(60)
-                if user_id in waiting_for_photo:
-                    waiting_for_photo.remove(user_id)
-                    await ctx.bot.send_message(
-                        chat_id=user_id, text="⏱ Жду фото. Вернёмся в меню?", reply_markup=reply_keyboard()
-                    )
-
-            elif query.data == "back_to_menu":
-                waiting_for_photo.discard(user_id)
-                await query.message.reply_text("🔙 Главное меню:", reply_markup=reply_keyboard())
-
-            else:
-                await query.message.reply_text("Выбери опцию:", reply_markup=reply_keyboard())
-
-        except BadRequest as e:
-            if "Query is too old" in str(e):
-                await query.message.reply_text(
-                    "⏱ Время на ответ истекло. Нажми кнопку снова.", reply_markup=reply_keyboard()
-                )
-            else:
-                logger.error(f"Ошибка обработки callback query: {e}")
-                await query.message.reply_text("❌ Произошла ошибка. Попробуйте снова.", reply_markup=reply_keyboard())
-
-    # ====== Сохранение ======
-    async def _on_callback_confirm_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        await self._cmd_save(upd, ctx)
-
-    async def _cmd_save(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        # работает и для /save, и для инлайн-кнопки
-        user_id = upd.effective_user.id if upd.effective_user else upd.callback_query.from_user.id
+# ====== Callback ======
+@dp.callback_query()
+async def handle_callback(query: types.CallbackQuery):
+    user_id = query.from_user.id
+    data = query.data
+    await query.answer()
+    if data == "stats":
+        await query.message.reply("📈 Эта опция ещё в разработке.", reply_markup=reply_keyboard())
+    elif data == "send_receipt":
+        waiting_for_photo.add(user_id)
+        await query.message.reply("📸 Пришли фото чека — разберу его 🧮", reply_markup=reply_keyboard())
+        await asyncio.sleep(60)
+        if user_id in waiting_for_photo:
+            waiting_for_photo.remove(user_id)
+            await bot.send_message(user_id, "⏱ Жду фото. Вернёмся в меню?", reply_markup=reply_keyboard())
+    elif data == "confirm_save":
         st = last_check_store.get(user_id)
-        target = upd.message if getattr(upd, "message", None) else upd.callback_query.message
+        if st:
+            await save_check(user_id, st, query.message)
+    else:
+        await query.message.reply("Выбери опцию:", reply_markup=reply_keyboard())
 
-        if not st:
-            await target.reply_text("❌ Нет распознанного чека для сохранения.", reply_markup=reply_keyboard())
+# ====== Фото ======
+@dp.message(types.ContentType.PHOTO)
+async def handle_photo(message: types.Message):
+    user_id = message.from_user.id
+    waiting_for_photo.discard(user_id)
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+
+    await message.reply("🔍 Чек получен. Начинаю обработку...", reply_markup=reply_keyboard())
+    asyncio.create_task(process_check_background(file_url, user_id, message))
+
+# ====== Фоновая обработка чека ======
+async def process_check_background(file_url: str, user_id: int, message: types.Message):
+    try:
+        timeout = httpx.Timeout(120)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                "https://mixfom2025.fvds.ru/api/bot/process-check",
+                json={"file_url": file_url, "user_id": user_id},
+            )
+
+        data = resp.json()
+        result = data.get("result")
+        if not result:
+            await message.reply("❌ Пустой результат от сервера.", reply_markup=reply_keyboard())
             return
 
-        # ------- определить имя файла и исходный путь -------
-        image_url = (st.get("image_url") or "").strip()
-        filename = (st.get("image_filename") or "").strip()
+        if not result.get("is_receipt", False):
+            reason = result.get("reason", "Не удалось определить, что на изображении.")
+            await message.reply(f"🚫 Это не чек.\nПричина: {reason}", reply_markup=reply_keyboard())
+            return
 
-        # 1) если filename не передали — достанем из URL
-        if not filename:
-            try:
-                path_part = urlparse(image_url).path
-                filename = os.path.basename(path_part.rstrip("/"))
-            except Exception:
-                filename = ""
+        text, keyboard = render_receipt_message(result, user_id)
+        await message.reply(text, reply_markup=keyboard, parse_mode="HTML")
 
-        # 2) если всё ещё пусто/‘tmp’ — найдём самый свежий temp-файл пользователя
-        def find_latest_tmp(prefix_dir: str) -> str | None:
-            if not os.path.isdir(prefix_dir):
-                return None
-            candidates = [
-                f for f in os.listdir(prefix_dir)
-                if f.startswith(f"user_{user_id}_") and os.path.isfile(os.path.join(prefix_dir, f))
-            ]
-            if not candidates:
-                return None
-            candidates.sort(key=lambda f: os.path.getmtime(os.path.join(prefix_dir, f)), reverse=True)
-            return candidates[0]
+    except Exception:
+        logger.exception("Ошибка при фоновой обработке чека")
+        await message.reply("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
+
+# ====== Сохранение чека ======
+async def save_check(user_id: int, st: dict, message: types.Message):
+    try:
+        image_url = st.get("image_url") or ""
+        filename = st.get("image_filename") or ""
 
         if not filename or filename.lower() == "tmp":
+            # попробуем взять из tmp
+            def find_latest_tmp(prefix_dir: str) -> None:
+                if not os.path.isdir(prefix_dir):
+                    return None
+                candidates = [
+                    f for f in os.listdir(prefix_dir)
+                    if f.startswith(f"user_{user_id}_") and os.path.isfile(os.path.join(prefix_dir, f))
+                ]
+                if not candidates:
+                    return None
+                candidates.sort(key=lambda f: os.path.getmtime(os.path.join(prefix_dir, f)), reverse=True)
+                return candidates[0]
+
             filename = find_latest_tmp(RECEIPTS_TMP_NEW) or find_latest_tmp(RECEIPTS_TMP_OLD) or filename
 
-        if not filename or filename.lower() == "tmp":
-            await target.reply_text(
-                "🚫 Не удалось определить файл изображения для сохранения. Попробуй отправить чек ещё раз.",
-                reply_markup=reply_keyboard(),
-            )
+        if not filename:
+            await message.reply("🚫 Не удалось определить файл для сохранения.", reply_markup=reply_keyboard())
             return
 
-        # Возможные места, где лежит временный файл
         src_candidates = [
-            os.path.join(RECEIPTS_TMP_NEW, filename),  # /app/static/receipts/tmp/<file>
-            os.path.join(RECEIPTS_TMP_OLD, filename),  # /app/static/tmp/<file> (старый путь)
+            os.path.join(RECEIPTS_TMP_NEW, filename),
+            os.path.join(RECEIPTS_TMP_OLD, filename),
         ]
-        # Куда перемещаем
         final_path = os.path.join(RECEIPTS_ROOT, filename)
-
-        # 3) если файл уже лежит в конечной папке — просто используем его
-        if os.path.isfile(final_path):
-            moved = True
-        else:
-            # ищем исходник среди кандидатов
+        if not os.path.isfile(final_path):
             src_path = next((p for p in src_candidates if os.path.isfile(p)), None)
-            moved = False
             if src_path:
-                try:
-                    os.makedirs(RECEIPTS_ROOT, exist_ok=True)
-                    # безопасно для разных ФС
-                    shutil.move(src_path, final_path)
-                    moved = True
-                except Exception as e:
-                    logger.error("move image failed: %s", e, exc_info=True)
+                shutil.move(src_path, final_path)
             else:
-                logger.warning("Temp file not found for %s (candidates: %s)", filename, src_candidates)
+                await message.reply("🚫 Файл не найден в tmp.", reply_markup=reply_keyboard())
+                return
 
-        if not moved:
-            await target.reply_text(
-                "🚫 Не удалось перенести изображение из временной папки. Попробуй ещё раз.",
-                reply_markup=reply_keyboard(),
-            )
-            return
-
-        # Обновим URL на «боевой»
-        # подменим любой tmp-сегмент на /static/receipts/
-        good_url = image_url or ""
-        if "/static/receipts/tmp/" in good_url:
-            good_url = good_url.replace("/static/receipts/tmp/", "/static/receipts/")
-        elif "/static/tmp/" in good_url:
-            good_url = good_url.replace("/static/tmp/", "/static/receipts/")
-        # если URL пустой или странный — сформируем его заново
-        if not good_url or good_url.endswith("/tmp") or good_url.endswith("/tmp/"):
-            good_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
-
+        # формируем URL
+        good_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
         st["image_url"] = good_url
-        st["image_filename"] = filename  # заодно положим имя файла в стор
+        st["image_filename"] = filename
 
-        # ------- сохранить чек в БД через API -------
-        try:
-            # поддерживаем оба формата: {"receipt": {...}} и плоский словарь
-            raw_receipt = st.get("receipt") if isinstance(st, dict) and "receipt" in st else st
-            if not isinstance(raw_receipt, dict):
-                await target.reply_text(
-                    "🚫 Формат данных чека неверный. Пришли фото ещё раз.",
-                    reply_markup=reply_keyboard()
-                )
-                return
+        # сохраняем через API
+        raw_receipt = st.get("receipt") if "receipt" in st else st
+        payload = {**raw_receipt, "user_id": user_id}
+        logger.info("[save] payload: %s", payload)
 
-            payload = {**raw_receipt, "user_id": user_id}
-            logger.info("[save] payload: %s", json.dumps(payload, ensure_ascii=False))
+        async with httpx.AsyncClient() as client:
+            resp = await client.post("https://mixfom2025.fvds.ru/api/receipts/save-check", json=payload)
 
-            async with httpx.AsyncClient() as client:
-                save_resp = await client.post(
-                    "https://mixfom2025.fvds.ru/api/receipts/save-check",
-                    json=payload
-                )
-
-            if save_resp.status_code != 200:
-                # компактное извлечение причины
-                brief = f"HTTP {save_resp.status_code}"
-                try:
-                    j = save_resp.json()
-                    logger.info("[save] 422 detail: %s", json.dumps(j, ensure_ascii=False))
-                    if isinstance(j, dict) and "detail" in j:
-                        det = j["detail"]
-                        if isinstance(det, list):
-                            parts = []
-                            for e in det:
-                                loc = ".".join(str(x) for x in (e.get("loc") or []))
-                                msg = e.get("msg") or e.get("type") or ""
-                                parts.append(f"{loc}: {msg}")
-                            brief = "; ".join(parts) or brief
-                        else:
-                            brief = str(det)
-                    else:
-                        txt_json = json.dumps(j, ensure_ascii=False)
-                        brief = (txt_json[:900] + "…") if len(txt_json) > 900 else txt_json
-                except Exception:
-                    txt = save_resp.text.strip()
-                    brief = (txt[:900] + "…") if len(txt) > 900 else txt
-
-                await target.reply_text(
-                    f"🚫 Не удалось сохранить чек.\n{brief}",
-                    reply_markup=reply_keyboard()
-                )
-                return
-
-        except Exception as e:
-            logger.error("[save] unexpected error: %s", e, exc_info=True)
-            await target.reply_text(
-                "🚫 Произошла ошибка при сохранении чека.",
-                reply_markup=reply_keyboard()
-            )
+        if resp.status_code != 200:
+            await message.reply(f"🚫 Не удалось сохранить чек. HTTP {resp.status_code}", reply_markup=reply_keyboard())
             return
 
-        # сюда попадём только при успешном сохранении
-        await target.reply_text("✅ Чек сохранён!", reply_markup=reply_keyboard())
-    # ====== Фото чека ======
-    async def _handle_photo(self, upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        user_id = upd.effective_user.id
-        waiting_for_photo.discard(user_id)
+        await message.reply("✅ Чек сохранён!", reply_markup=reply_keyboard())
 
-        try:
-            photo = upd.message.photo[-1]
-            file = await ctx.bot.get_file(photo.file_id)
-            path = file.file_path
-            file_url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+    except Exception:
+        logger.exception("Ошибка при сохранении чека")
+        await message.reply("🚫 Произошла ошибка при сохранении.", reply_markup=reply_keyboard())
 
-            # Сообщаем сразу, что начали обработку
-            await upd.message.reply_text("🔍 Чек получен. Начинаю обработку...", reply_markup=reply_keyboard())
-
-            # Всё, что может быть долго — в отдельном task
-            asyncio.create_task(self._process_check_in_background(file_url, user_id, upd.message))
-
-        except Exception:
-            logger.exception("Ошибка при обработке фото")
-            await upd.message.reply_text("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
-
-    async def _process_check_in_background(self, file_url: str, user_id: int, message):
-        try:
-            timeout = httpx.Timeout(120.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    "https://mixfom2025.fvds.ru/api/bot/process-check",
-                    json={"file_url": file_url, "user_id": user_id},
-                )
-
-            if resp.status_code != 200:
-                await message.reply_text("❌ Произошла ошибка при обработке чека.", reply_markup=reply_keyboard())
-                return
-
-            data = resp.json()
-            result = data.get("result")
-            if not result:
-                await message.reply_text("❌ Пустой результат от сервера.", reply_markup=reply_keyboard())
-                return
-
-            if not result.get("is_receipt", False):
-                reason = result.get("reason", "Не удалось определить, что на изображении.")
-                await message.reply_text(f"🚫 Это не чек.\nПричина: {reason}", reply_markup=reply_keyboard())
-                return
-
-            text, keyboard = render_receipt_message(result, user_id)
-            await message.reply_text(escape(text), reply_markup=keyboard, parse_mode="HTML")
-
-        except Exception:
-            logger.exception("Ошибка при фоновой обработке чека")
-            await message.reply_text("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
-
-
-bot = TelegramBot()
+# ====== Настройка меню ======
+async def setup_menu():
+    versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+    await bot.set_chat_menu_button(MenuButtonWebApp(text="Open", web_app=WebAppInfo(url=versioned_url)))

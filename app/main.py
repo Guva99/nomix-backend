@@ -8,14 +8,13 @@ from starlette.responses import JSONResponse
 from telegram import Update
 import json
 from app.core.database import engine, Base
-from app.services.bot import bot
+from app.services.bot import dp, bot
 from app.routers.auth import router as login
 from app.routers.data import router as data
 from app.routers.gpt import router as gpt
 from app.routers.Checks import router as checks
 from app.routers.products import router as products
-from alembic.config import Config
-from alembic import command
+from aiogram.types import Update
 
 
 
@@ -79,24 +78,11 @@ async def on_startup():
 
 
 @app.post("/api/telegram/webhook")
-async def telegram_webhook(request: Request):
-    try:
-        update_data = await request.json()
-    except json.JSONDecodeError:
-        return JSONResponse(content={"ok": False, "error": "Invalid JSON"}, status_code=400)
-
-    try:
-        # Создаём объект Update
-        update = Update.de_json(update_data, bot.application.bot)
-    except Exception:
-        return JSONResponse(content={"ok": False, "error": "Invalid update format"}, status_code=400)
-
-    # ==== Фоновая обработка ====
-    asyncio.create_task(bot.process_update(update))
-
-    # Отправляем Telegram сразу 200 OK
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    update = Update(**data)
+    await dp.feed_update(bot, update)
     return {"ok": True}
-
 
 @app.get("/health")
 async def health_check():
