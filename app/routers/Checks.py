@@ -74,20 +74,42 @@ async def get_last_check(
     }
 
 
-
 @router.post("/save-check")
 async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get_db_session)):
-    # если чек был сначала через /process-check
+    # Получаем временные данные
     staged = last_check_store.get(payload.user_id)
     image_url = payload.image_url
+
+    # Перемещаем файл только при сохранении
     if staged and "tmp_path" in staged:
         tmp_path = staged["tmp_path"]
-        filename = f"receipt_{payload.user_id}_{int(datetime.utcnow().timestamp())}.jpg"
-        dest_path = os.path.join(STATIC_RECEIPT_DIR, filename)
-        shutil.move(tmp_path, dest_path)
-        image_url = f"/static/receipts/{filename}"  # путь для фронта
+        if os.path.exists(tmp_path):
+            filename = f"receipt_{payload.user_id}_{int(datetime.utcnow().timestamp())}.jpg"
+            dest_path = os.path.join(STATIC_RECEIPT_DIR, filename)
 
-    # создаём чек
+            try:
+                # Перемещаем из временной в постоянную папку
+                shutil.move(tmp_path, dest_path)
+                image_url = f"/static/receipts/{filename}"
+
+                # Обновляем данные в хранилище
+                if payload.user_id in last_check_store:
+                    last_check_store[payload.user_id]["image_filename"] = filename
+                    last_check_store[payload.user_id]["image_url"] = image_url
+                    last_check_store[payload.user_id].pop("tmp_path", None)
+
+            except Exception as e:
+                logger.error(f"Ошибка перемещения файла: {e}")
+                # Если не удалось переместить, используем временный путь
+                image_url = f"/static/tmp/{staged['tmp_name']}"
+        else:
+            # Файл уже перемещен или удален
+            if "image_filename" in staged:
+                image_url = f"/static/receipts/{staged['image_filename']}"
+            else:
+                image_url = f"/static/tmp/{staged['tmp_name']}"
+
+    # Создаем чек с правильным image_url
     receipt = ReceiptDB(
         user_id=payload.user_id,
         store=payload.store,
@@ -95,7 +117,7 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
         time=payload.time or "",
         total=payload.total,
         currency=payload.currency,
-        image_url=image_url,   # теперь реально путь к файлу
+        image_url=image_url,
     )
     db.add(receipt)
     await db.flush()

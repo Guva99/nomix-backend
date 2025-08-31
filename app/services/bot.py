@@ -268,6 +268,7 @@ class TelegramBot:
             user_id = message.chat.id
         else:
             user_id = message.from_user.id
+
         logger.info(f"🔄 [save] Поиск чека для user_id={user_id}")
         logger.info(f"📦 [save] Ключи в last_check_store: {list(last_check_store.keys())}")
 
@@ -295,95 +296,6 @@ class TelegramBot:
 
         target = message
 
-        # ------- определить имя файла и исходный путь -------
-        image_url = (st.get("image_url") or "").strip()
-        filename = st.get("tmp_name", "")  # ← Используем tmp_name из сохраненных данных
-
-        if not filename:
-            # Если filename не передан, пробуем из URL
-            try:
-                path_part = urlparse(image_url).path
-                filename = os.path.basename(path_part.rstrip("/"))
-            except Exception:
-                filename = ""
-
-        # 2) если всё ещё пусто — найдём самый свежий temp-файл пользователя
-        def find_latest_tmp(prefix_dir: str) -> str | None:
-            if not os.path.isdir(prefix_dir):
-                return None
-
-            candidates = [
-                f for f in os.listdir(prefix_dir)
-                if f.startswith(f"user_{user_id}_") and os.path.isfile(os.path.join(prefix_dir, f))
-            ]
-
-            if not candidates:
-                return None
-
-            candidates.sort(key=lambda f: os.path.getmtime(os.path.join(prefix_dir, f)), reverse=True)
-            return candidates[0]
-
-        if not filename:
-            filename = find_latest_tmp(RECEIPTS_TMP_NEW) or find_latest_tmp(RECEIPTS_TMP_OLD)
-
-        if not filename:
-            await target.answer(
-                "🚫 Не удалось определить файл изображения для сохранения. Попробуй отправить чек ещё раз.",
-                reply_markup=reply_keyboard(),
-            )
-            return
-
-        # Возможные места, где лежит временный файл
-        src_candidates = [
-            os.path.join(RECEIPTS_TMP_NEW, filename),  # /app/static/receipts/tmp/<file>
-            os.path.join(RECEIPTS_TMP_OLD, filename),  # /app/static/tmp/<file> (старый путь)
-            st.get("tmp_path", ""),  # ← Прямой путь из сохраненных данных
-        ]
-
-        # Куда перемещаем
-        final_path = os.path.join(RECEIPTS_ROOT, filename)
-
-        # 3) если файл уже лежит в конечной папке — просто используем его
-        if os.path.isfile(final_path):
-            moved = True
-        else:
-            # ищем исходник среди кандидатов
-            src_path = next((p for p in src_candidates if p and os.path.isfile(p)), None)
-            moved = False
-
-            if src_path:
-                try:
-                    os.makedirs(RECEIPTS_ROOT, exist_ok=True)  # безопасно для разных ФС
-                    shutil.move(src_path, final_path)
-                    moved = True
-                    logger.info(f"✅ [save] Файл перемещен: {src_path} -> {final_path}")
-                except Exception as e:
-                    logger.error("move image failed: %s", e, exc_info=True)
-            else:
-                logger.warning("Temp file not found for %s (candidates: %s)", filename, src_candidates)
-
-        if not moved:
-            await target.answer(
-                "🚫 Не удалось перенести изображение из временной папки. Попробуй ещё раз.",
-                reply_markup=reply_keyboard(),
-            )
-            return
-
-        # Обновим URL на «боевой»
-        # подменим любой tmp-сегмент на /static/receipts/
-        good_url = image_url or ""
-        if "/static/receipts/tmp/" in good_url:
-            good_url = good_url.replace("/static/receipts/tmp/", "/static/receipts/")
-        elif "/static/tmp/" in good_url:
-            good_url = good_url.replace("/static/tmp/", "/static/receipts/")
-
-        # если URL пустой или странный — сформируем его заново
-        if not good_url or good_url.endswith("/tmp") or good_url.endswith("/tmp/"):
-            good_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
-
-        st["image_url"] = good_url
-        st["image_filename"] = filename  # заодно положим имя файла в стор
-
         # ------- сохранить чек в БД через API -------
         try:
             # поддерживаем оба формата: {"receipt": {...}} и плоский словарь
@@ -396,10 +308,16 @@ class TelegramBot:
                 )
                 return
 
+            # Подготавливаем payload для API
             payload = {**raw_receipt, "user_id": user_id}
-            # Убираем временные поля из payload
+
+            # Убираем временные поля, которые не нужны в API
             payload.pop("tmp_name", None)
             payload.pop("tmp_path", None)
+
+            # Если есть image_url, используем его, иначе создаем из tmp_name
+            if not payload.get("image_url") and "tmp_name" in raw_receipt:
+                payload["image_url"] = f"/static/tmp/{raw_receipt['tmp_name']}"
 
             logger.info("[save] payload: %s", json.dumps(payload, ensure_ascii=False))
 

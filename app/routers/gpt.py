@@ -36,6 +36,7 @@ async def process_check(payload: PhotoPayload):
         f.write(image_bytes)
     logger.info("💾 [process-check] temp saved: %s", tmp_path)
 
+
     raw = await analyze_receipt_from_bytes(image_bytes)
 
     if isinstance(raw, str):
