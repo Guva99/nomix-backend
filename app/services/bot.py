@@ -264,7 +264,10 @@ class TelegramBot:
         await self._cmd_save(query.message, is_callback=True)
 
     async def _cmd_save(self, message: Message, is_callback: bool = False):
-        user_id = message.from_user.id
+        if is_callback:
+            user_id = message.chat.id
+        else:
+            user_id = message.from_user.id
         logger.info(f"🔄 [save] Поиск чека для user_id={user_id}")
         logger.info(f"📦 [save] Ключи в last_check_store: {list(last_check_store.keys())}")
 
