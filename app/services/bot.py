@@ -265,26 +265,46 @@ class TelegramBot:
 
     async def _cmd_save(self, message: Message, is_callback: bool = False):
         user_id = message.from_user.id
+        logger.info(f"🔄 [save] Поиск чека для user_id={user_id}")
+        logger.info(f"📦 [save] Ключи в last_check_store: {list(last_check_store.keys())}")
+
+        # Правильный поиск - по числовому user_id
         st = last_check_store.get(user_id)
-        target = message
 
         if not st:
-            await target.answer("❌ Нет распознанного чека для сохранения.", reply_markup=reply_keyboard())
+            logger.error(f"🚫 [save] Чек не найден для user_id={user_id}")
+            logger.error(f"📋 [save] Доступные ключи: {list(last_check_store.keys())}")
+            await message.answer("❌ Нет распознанного чека для сохранения.", reply_markup=reply_keyboard())
             return
+
+        logger.info(f"✅ [save] Чек найден для user_id={user_id}")
+
+        # Данные хранятся в формате: {"receipt": {...}, "tmp_name": "...", "tmp_path": "..."}
+        # Нужно извлечь receipt данные
+        if "receipt" in st:
+            receipt_data = st["receipt"]
+            # Добавляем временные данные к receipt для обработки
+            if "tmp_name" in st:
+                receipt_data["tmp_name"] = st["tmp_name"]
+            if "tmp_path" in st:
+                receipt_data["tmp_path"] = st["tmp_path"]
+            st = receipt_data
+
+        target = message
 
         # ------- определить имя файла и исходный путь -------
         image_url = (st.get("image_url") or "").strip()
-        filename = (st.get("image_filename") or "").strip()
+        filename = st.get("tmp_name", "")  # ← Используем tmp_name из сохраненных данных
 
-        # 1) если filename не передали — достанем из URL
         if not filename:
+            # Если filename не передан, пробуем из URL
             try:
                 path_part = urlparse(image_url).path
                 filename = os.path.basename(path_part.rstrip("/"))
             except Exception:
                 filename = ""
 
-        # 2) если всё ещё пусто/‘tmp’ — найдём самый свежий temp-файл пользователя
+        # 2) если всё ещё пусто — найдём самый свежий temp-файл пользователя
         def find_latest_tmp(prefix_dir: str) -> str | None:
             if not os.path.isdir(prefix_dir):
                 return None
@@ -300,10 +320,10 @@ class TelegramBot:
             candidates.sort(key=lambda f: os.path.getmtime(os.path.join(prefix_dir, f)), reverse=True)
             return candidates[0]
 
-        if not filename or filename.lower() == "tmp":
-            filename = find_latest_tmp(RECEIPTS_TMP_NEW) or find_latest_tmp(RECEIPTS_TMP_OLD) or filename
+        if not filename:
+            filename = find_latest_tmp(RECEIPTS_TMP_NEW) or find_latest_tmp(RECEIPTS_TMP_OLD)
 
-        if not filename or filename.lower() == "tmp":
+        if not filename:
             await target.answer(
                 "🚫 Не удалось определить файл изображения для сохранения. Попробуй отправить чек ещё раз.",
                 reply_markup=reply_keyboard(),
@@ -314,6 +334,7 @@ class TelegramBot:
         src_candidates = [
             os.path.join(RECEIPTS_TMP_NEW, filename),  # /app/static/receipts/tmp/<file>
             os.path.join(RECEIPTS_TMP_OLD, filename),  # /app/static/tmp/<file> (старый путь)
+            st.get("tmp_path", ""),  # ← Прямой путь из сохраненных данных
         ]
 
         # Куда перемещаем
@@ -324,7 +345,7 @@ class TelegramBot:
             moved = True
         else:
             # ищем исходник среди кандидатов
-            src_path = next((p for p in src_candidates if os.path.isfile(p)), None)
+            src_path = next((p for p in src_candidates if p and os.path.isfile(p)), None)
             moved = False
 
             if src_path:
@@ -332,6 +353,7 @@ class TelegramBot:
                     os.makedirs(RECEIPTS_ROOT, exist_ok=True)  # безопасно для разных ФС
                     shutil.move(src_path, final_path)
                     moved = True
+                    logger.info(f"✅ [save] Файл перемещен: {src_path} -> {final_path}")
                 except Exception as e:
                     logger.error("move image failed: %s", e, exc_info=True)
             else:
@@ -362,7 +384,7 @@ class TelegramBot:
         # ------- сохранить чек в БД через API -------
         try:
             # поддерживаем оба формата: {"receipt": {...}} и плоский словарь
-            raw_receipt = st.get("receipt") if isinstance(st, dict) and "receipt" in st else st
+            raw_receipt = st
 
             if not isinstance(raw_receipt, dict):
                 await target.answer(
@@ -372,6 +394,10 @@ class TelegramBot:
                 return
 
             payload = {**raw_receipt, "user_id": user_id}
+            # Убираем временные поля из payload
+            payload.pop("tmp_name", None)
+            payload.pop("tmp_path", None)
+
             logger.info("[save] payload: %s", json.dumps(payload, ensure_ascii=False))
 
             async with httpx.AsyncClient() as client:
@@ -418,6 +444,11 @@ class TelegramBot:
                 reply_markup=reply_keyboard()
             )
             return
+
+        # Очищаем временные данные после успешного сохранения
+        if user_id in last_check_store:
+            del last_check_store[user_id]
+            logger.info(f"🧹 [save] Временные данные очищены для user_id={user_id}")
 
         # сюда попадём только при успешном сохранении
         await target.answer("✅ Чек сохранён!", reply_markup=reply_keyboard())
