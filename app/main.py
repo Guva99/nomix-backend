@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 from telegram import Update
 import json
 from app.core.database import engine, Base
-from app.services.bot import dp, bot
+from app.services.bot import bot
 from app.routers.auth import router as login
 from app.routers.data import router as data
 from app.routers.gpt import router as gpt

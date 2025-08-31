@@ -20,7 +20,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
-from aiogram.utils.markdown import escape_md
+from html import escape
 
 logger = logging.getLogger(__name__)
 
@@ -460,7 +460,7 @@ class TelegramBot:
                     return
 
                 text, keyboard = render_receipt_message(result, user_id)
-                await message.answer(escape_md(text), reply_markup=keyboard)
+                await message.answer(escape(text), reply_markup=keyboard)
 
         except Exception:
             logger.exception("Ошибка при обработке фото")
