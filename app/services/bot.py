@@ -48,7 +48,7 @@ def reply_keyboard() -> ReplyKeyboardMarkup:
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [types.KeyboardButton(text="🧾 Чек"), types.KeyboardButton(text="📈 Статистика")],
-            [types.KeyboardButton(text="❓ Все команды")],
+            [types.KeyboardButton(text="❓ Помощь")],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -203,7 +203,7 @@ class TelegramBot:
 
     async def _cmd_start(self, message: Message):
         await message.answer(
-            text="Выбери опцию (кнопки под полем ввода):",
+            text="Привет я Nomix! Я твой помощник по анализу чека, для того чтобы начать работу выберу одну из опции ниже:",
             reply_markup=reply_keyboard(),
         )
 

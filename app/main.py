@@ -43,8 +43,8 @@ ALLOWED_ORIGINS = [
 app.include_router(login, prefix="/api/telegram", tags=["Telegram"])
 app.include_router(data, prefix="/api/data", tags=["Database"])
 app.include_router(gpt, prefix="/api/bot", tags=["GPT"])
-app.include_router(checks, prefix="/api/receipts", tags=["Receipts"])
-app.include_router(products, prefix="/api", tags=["Products"])
+app.include_router(checks, prefix="/api/receipts", tags=["Чеки"])
+app.include_router(products, prefix="/api", tags=["Продукты"])
 
 
 
