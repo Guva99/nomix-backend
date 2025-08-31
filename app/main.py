@@ -80,8 +80,7 @@ async def on_startup():
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(req: Request):
     data = await req.json()
-    update = Update(**data)
-    await dp.feed_update(bot, update)
+    await bot.process_update(data)
     return {"ok": True}
 
 @app.get("/health")
