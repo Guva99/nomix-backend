@@ -106,14 +106,14 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
     return header + body + footer, keyboard
 
 
-async def get_avatar_base64(user_id: int) -> str | None:
+async def get_avatar_base64(self, user_id: int) -> str | None:
     try:
-        bot = Bot(token=TOKEN)
-        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        # используем self.bot, НЕ создаём новый Bot()
+        photos = await self.bot.get_user_profile_photos(user_id, limit=1)
         if photos.total_count == 0:
             return None
 
-        file_obj = await bot.get_file(photos.photos[0][-1].file_id)
+        file_obj = await self.bot.get_file(photos.photos[0][-1].file_id)
         path = file_obj.file_path
         url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
 
@@ -125,11 +125,9 @@ async def get_avatar_base64(user_id: int) -> str | None:
 
             encoded = base64.b64encode(resp.content).decode("utf-8")
             return f"data:image/jpeg;base64,{encoded}"
-
     except Exception as e:
         logger.error(f"[get_avatar_base64] Failed for {user_id}: {e}")
         return None
-
 
 class TelegramBot:
     def __init__(self) -> None:
