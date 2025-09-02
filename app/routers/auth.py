@@ -6,7 +6,7 @@ import logging
 from app.utils.auth import generate_token
 from app.models.users import TelegramUserCreate
 from app.core.database import get_db_session
-from app.services.bot import get_avatar_base64
+from app.services.bot import bot
 
 router = APIRouter()
 
@@ -18,7 +18,7 @@ async def login(
 ):
     try:
         # Получаем base64-картинку аватарки
-        avatar_base64 = await get_avatar_base64(user_data.id)
+        avatar_base64 = await bot.get_avatar_base64(user_data.id)
 
         # Проверка на наличие пользователя
         result = await db.execute(
