@@ -12,6 +12,8 @@ from app.models.users import UserDB
 from app.services.GPT import analyze_receipt_from_bytes, last_check_store
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from typing import Optional
+from sqlalchemy import select, and_
 
 router = APIRouter()
 STATIC_RECEIPT_DIR = "/app/static/receipts"
