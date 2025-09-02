@@ -162,18 +162,15 @@ class TelegramBot:
     async def setup_webhook(self) -> None:
         await self.initialize()
         webhook_url = os.getenv("WEBHOOK_URL", f"{WEBAPP_BASE_URL}webhook")
+        secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
-        webhook_info = await self.bot.get_webhook_info()
-        if webhook_info.url != webhook_url:
-            await self.bot.set_webhook(
-                url=webhook_url,
-                drop_pending_updates=True,
-                secret_token=os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
-                allowed_updates=["message", "callback_query"]
-            )
-            logger.info("Webhook configured: %s", webhook_url)
-        else:
-            logger.info("Webhook already at %s – skip", webhook_url)
+        await self.bot.set_webhook(
+            url=webhook_url,
+            drop_pending_updates=True,
+            secret_token=secret,
+            allowed_updates=["message", "callback_query"],
+        )
+        logger.info("Webhook set to %s (secret: %s)", webhook_url, "yes" if secret else "no")
 
     async def process_update(self, update: dict) -> None:
         await self.initialize()
