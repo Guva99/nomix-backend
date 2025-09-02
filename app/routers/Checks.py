@@ -182,11 +182,6 @@ async def edit_saved_check(id: int, db: AsyncSession = Depends(get_db_session)):
     }
 
 
-from typing import Optional
-from sqlalchemy import and_, select, literal_column
-from sqlalchemy.orm import aliased
-from sqlalchemy import func, in_
-
 @router.get("/saved-checks")
 async def get_saved_checks(
     user_id: int = Query(...),
