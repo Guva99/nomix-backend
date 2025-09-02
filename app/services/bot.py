@@ -165,7 +165,12 @@ class TelegramBot:
 
         webhook_info = await self.bot.get_webhook_info()
         if webhook_info.url != webhook_url:
-            await self.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+            await self.bot.set_webhook(
+                url=webhook_url,
+                drop_pending_updates=True,
+                secret_token=os.getenv("TELEGRAM_WEBHOOK_SECRET", ""),
+                allowed_updates=["message", "callback_query"]
+            )
             logger.info("Webhook configured: %s", webhook_url)
         else:
             logger.info("Webhook already at %s – skip", webhook_url)

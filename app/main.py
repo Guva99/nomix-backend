@@ -79,6 +79,11 @@ async def on_startup():
 
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(req: Request):
+    secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+    if secret:
+        hdr = req.headers.get("X-Telegram-Bot-Api-Secret-Token")
+        if hdr != secret:
+            raise HTTPException(status_code=403, detail="Bad secret")
     data = await req.json()
     await bot.process_update(data)
     return {"ok": True}
