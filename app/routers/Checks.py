@@ -192,7 +192,7 @@ async def get_saved_checks(
     product_id: Optional[int] = Query(None, description="Фильтр: только чеки с этим product_id"),
     db: AsyncSession = Depends(get_db_session),
 ):
-    # --- границы периода ---
+    # --- границы периода по дате СОХРАНЕНИЯ ---
     today = date.today()
     if period == "day":
         start = today
@@ -204,23 +204,24 @@ async def get_saved_checks(
         start = date(today.year, 1, 1)
     else:
         start = date(today.year, today.month, 1)
+
     start_str = start.isoformat()
     end_str = today.isoformat()
 
-    # --- база чеков за период ---
+    # --- база чеков за период (по created_at) ---
     q = (
         select(ReceiptDB)
         .where(
             and_(
                 ReceiptDB.user_id == user_id,
-                ReceiptDB.date >= start_str,
-                ReceiptDB.date <= end_str,
+                # сравнение по дате сохранения
+                func.date(ReceiptDB.created_at) >= start_str,
+                func.date(ReceiptDB.created_at) <= end_str,
             )
         )
-        .order_by(ReceiptDB.date.desc(), ReceiptDB.id.desc())
+        .order_by(ReceiptDB.created_at.desc(), ReceiptDB.id.desc())
     )
 
-    # если фильтр по продукту — ограничим чеками, где он встречается
     if product_id is not None:
         q = (
             q.join(ReceiptItemDB, ReceiptItemDB.receipt_id == ReceiptDB.id)
@@ -231,17 +232,17 @@ async def get_saved_checks(
     result = await db.execute(q)
     receipts = result.scalars().all()
 
-    # --- короткий ответ ---
     if not full:
         data = [
             {
                 "id": r.id,
                 "store": r.store,
-                "date": r.date,
+                "date": r.date,               # дата на чеке — оставляем как есть
                 "time": r.time,
                 "total": r.total,
                 "currency": r.currency,
                 "image_url": r.image_url,
+                "saved_at": (r.created_at.isoformat() if r.created_at else None),  # полезно видеть
             }
             for r in receipts
         ]
@@ -255,7 +256,7 @@ async def get_saved_checks(
             "total_amount": round(sum((r.total or 0) for r in receipts), 2),
         }
 
-    # --- полный ответ: батчом достаём позиции всех чеков (и подтягиваем products) ---
+    # полный ответ с товарами
     receipt_ids = [r.id for r in receipts]
     items_by_receipt: dict[int, list[dict]] = {rid: [] for rid in receipt_ids}
 
@@ -280,16 +281,7 @@ async def get_saved_checks(
             items_q = items_q.where(ReceiptItemDB.product_id == product_id)
 
         ir = await db.execute(items_q)
-        for (
-            rid,
-            pid,
-            price,
-            pname,
-            pcat,
-            pcat_id,
-            psub,
-            psub_id,
-        ) in ir.all():
+        for rid, pid, price, pname, pcat, pcat_id, psub, psub_id in ir.all():
             items_by_receipt[rid].append(
                 {
                     "product_id": pid,
@@ -311,6 +303,7 @@ async def get_saved_checks(
             "total": r.total,
             "currency": r.currency,
             "image_url": r.image_url,
+            "saved_at": (r.created_at.isoformat() if r.created_at else None),
             "items": items_by_receipt.get(r.id, []),
         }
         for r in receipts
