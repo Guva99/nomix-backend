@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, BigInteger
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, BigInteger, DateTime
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from sqlalchemy.sql import func as sa_func
 
 
 class ReceiptDB(Base):
@@ -14,6 +15,8 @@ class ReceiptDB(Base):
     total = Column(Float)
     currency = Column(String)
     image_url = Column(String, nullable=True)
+
+    created_at = Column(DateTime, server_default=sa_func.now(), nullable=False, index=True)
 
     items = relationship("ReceiptItemDB", back_populates="receipt", cascade="all, delete-orphan")
 
