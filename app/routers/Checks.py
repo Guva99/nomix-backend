@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 import shutil
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends, Header
 from datetime import date, datetime, timedelta
 
 import logging
@@ -11,9 +13,9 @@ from app.models.db.receipt import ReceiptDB, ReceiptItemDB
 from app.models.users import UserDB
 from app.services.GPT import analyze_receipt_from_bytes, last_check_store
 from app.services.jwt import verify_access_token
+from app.deps.auth import get_current_user
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from typing import Optional
 from sqlalchemy import select, and_, func
 
