@@ -1,9 +1,9 @@
 import asyncio
 import logging
 import os
-
 from datetime import datetime
-from fastapi import FastAPI, Request, HTTPException
+
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import engine, Base
@@ -13,8 +13,6 @@ from app.routers.data import router as data
 from app.routers.gpt import router as gpt
 from app.routers.Checks import router as checks
 from app.routers.products import router as products
-
-
 
 # Настройка логирования
 logging.basicConfig(
@@ -38,13 +36,11 @@ ALLOWED_ORIGINS = [
 ]
 
 # Роутеры
-app.include_router(login, prefix="/api/telegram", tags=["Telegram"])
-app.include_router(data, prefix="/api/data", tags=["Database"])
-app.include_router(gpt, prefix="/api/bot", tags=["GPT"])
-app.include_router(checks, prefix="/api/receipts", tags=["Чеки"])
-app.include_router(products, prefix="/api", tags=["Продукты"])
-
-
+app.include_router(login,    prefix="/api/telegram", tags=["Telegram"])
+app.include_router(data,     prefix="/api/data",     tags=["Database"])
+app.include_router(gpt,      prefix="/api/bot",      tags=["GPT"])
+app.include_router(checks,   prefix="/api/receipts", tags=["Чеки"])
+app.include_router(products, prefix="/api",          tags=["Продукты"])
 
 @app.on_event("startup")
 async def on_startup():
@@ -58,7 +54,7 @@ async def on_startup():
                 await conn.run_sync(Base.metadata.create_all)
                 logger.info("✅ Database connection established successfully")
                 break
-        except Exception as e:
+        except Exception:
             if attempt == max_retries - 1:
                 logger.critical(f"❌ Failed to connect to DB after {max_retries} attempts")
                 raise
@@ -74,17 +70,20 @@ async def on_startup():
         logger.critical(f"❌ Bot initialization failed: {e}")
         raise
 
-
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(req: Request):
+    # Проверяем секрет Telegram (если задан)
     secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
     if secret:
         hdr = req.headers.get("X-Telegram-Bot-Api-Secret-Token")
         if hdr != secret:
             raise HTTPException(status_code=403, detail="Bad secret")
+
     data = await req.json()
-    await bot.process_update(data)
-    return {"ok": True}
+
+    asyncio.create_task(bot.process_update(data))
+
+    return Response(status_code=200)
 
 @app.get("/health")
 async def health_check():
