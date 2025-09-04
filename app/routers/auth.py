@@ -7,9 +7,9 @@ from app.utils.auth import generate_token
 from app.models.users import TelegramUserCreate
 from app.core.database import get_db_session
 from app.services.bot import bot
+from app.services.jwt import create_access_token
 
 router = APIRouter()
-
 
 @router.post("/login")
 async def login(
@@ -17,10 +17,10 @@ async def login(
     db: AsyncSession = Depends(get_db_session)
 ):
     try:
-        # Получаем base64-картинку аватарки
+        # Аватарка пользователя
         avatar_base64 = await bot.get_avatar_base64(user_data.id)
 
-        # Проверка на наличие пользователя
+        # Проверяем, есть ли пользователь
         result = await db.execute(
             text("SELECT token FROM users WHERE id = :id"),
             {"id": user_data.id}
@@ -66,12 +66,17 @@ async def login(
 
         await db.commit()
 
+        # ⬇️ ГЛАВНОЕ: начинаем выдавать Bearer (JWT)
+        access_token = create_access_token({"sub": str(user_data.id)})
+
         return {
             "message": "success",
             "code": 200,
             "id": user_data.id,
             "photoUrl": avatar_base64,
-            "token": token
+            "token": token,                 # legacy (пока не ломаем)
+            "access_token": access_token,   # НОВОЕ — используй как Bearer
+            "token_type": "Bearer"
         }
 
     except Exception as e:

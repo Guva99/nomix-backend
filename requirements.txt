@@ -12,5 +12,6 @@ openai==1.31.0
 httpx
 Pillow
 aiogram>=3.0.0,<4.0.0
+pyjwt==2.9.0
 
 

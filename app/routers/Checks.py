@@ -10,6 +10,8 @@ from app.core.database import get_db_session
 from app.models.db.receipt import ReceiptDB, ReceiptItemDB
 from app.models.users import UserDB
 from app.services.GPT import analyze_receipt_from_bytes, last_check_store
+from app.services.jwt import verify_access_token
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import Optional
@@ -23,31 +25,23 @@ logger = logging.getLogger(__name__)
 
 @router.get("/last-check")
 async def get_last_check(
-    user_id: int = Query(None),
-    token: str = Query(None),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
-    if not user_id and not token:
-        raise HTTPException(status_code=400, detail="Нужно передать либо user_id, либо token")
+    """Последний распознанный чек (staged) + список сохранённых чеков — доступ только по JWT."""
+    user_id = int(user["sub"])
 
-    # Получаем user_id по токену
-    if token and not user_id:
-        result = await db.execute(select(UserDB).where(UserDB.token == token))
-        user = result.scalar()
-        if not user:
-            raise HTTPException(status_code=404, detail="Пользователь по токену не найден")
-        user_id = user.id
-
-    # Получаем последний чек из памяти
+    # Последний чек из памяти (staged)
     last_check = last_check_store.get(user_id)
 
-    if not last_check:  # Если нет в памяти, пытаемся найти в базе
+    # Если нет в памяти — попробуем найти последний сохранённый в БД (опционально)
+    if not last_check:
         result = await db.execute(
             select(ReceiptDB).where(ReceiptDB.user_id == user_id).order_by(ReceiptDB.id.desc()).limit(1)
         )
         last_check = result.scalar()
 
-    # Получаем все сохранённые чеки из базы
+    # Все сохранённые чеки пользователя
     result = await db.execute(
         select(ReceiptDB).where(ReceiptDB.user_id == user_id).order_by(ReceiptDB.id.desc())
     )
@@ -77,7 +71,26 @@ async def get_last_check(
 
 
 @router.post("/save-check")
-async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get_db_session)):
+async def save_check(
+    payload: SaveReceiptPayload,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """
+    Сохранение чека:
+    - боту Bearer не нужен (сервер→сервер).
+    - если пришёл Bearer, жёстко сверяем user_id с JWT.sub и не даём подменять.
+    """
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+        p = verify_access_token(token)
+        if not p:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        jwt_uid = int(p["sub"])
+        if payload.user_id and payload.user_id != jwt_uid:
+            raise HTTPException(status_code=403, detail="user_id mismatch")
+        payload.user_id = jwt_uid
+
     # Получаем временные данные
     staged = last_check_store.get(payload.user_id)
     image_url = payload.image_url
@@ -88,30 +101,23 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
         if os.path.exists(tmp_path):
             filename = f"receipt_{payload.user_id}_{int(datetime.utcnow().timestamp())}.jpg"
             dest_path = os.path.join(STATIC_RECEIPT_DIR, filename)
-
             try:
-                # Перемещаем из временной в постоянную папку
                 shutil.move(tmp_path, dest_path)
                 image_url = f"/static/receipts/{filename}"
-
-                # Обновляем данные в хранилище
                 if payload.user_id in last_check_store:
                     last_check_store[payload.user_id]["image_filename"] = filename
                     last_check_store[payload.user_id]["image_url"] = image_url
                     last_check_store[payload.user_id].pop("tmp_path", None)
-
             except Exception as e:
                 logger.error(f"Ошибка перемещения файла: {e}")
-                # Если не удалось переместить, используем временный путь
                 image_url = f"/static/tmp/{staged['tmp_name']}"
         else:
-            # Файл уже перемещен или удален
             if "image_filename" in staged:
                 image_url = f"/static/receipts/{staged['image_filename']}"
             else:
                 image_url = f"/static/tmp/{staged['tmp_name']}"
 
-    # Создаем чек с правильным image_url
+    # Создаём чек в БД
     receipt = ReceiptDB(
         user_id=payload.user_id,
         store=payload.store,
@@ -144,10 +150,13 @@ async def save_check(payload: SaveReceiptPayload, db: AsyncSession = Depends(get
     return {"status": "ok", "image_url": image_url}
 
 @router.get("/edit-check")
-async def edit_check(user_id: int = Query(...)):
+async def edit_check(
+    user=Depends(get_current_user)
+):
+    """Редактирование последнего распознанного (staged) — только по JWT."""
+    user_id = int(user["sub"])
     logger.info("📥 [edit-check] Запрос от user_id=%s", user_id)
 
-    # Выводим содержимое хранилища на случай отладки
     if not last_check_store:
         logger.warning("⚠️ [edit-check] last_check_store пуст")
     else:
@@ -162,11 +171,26 @@ async def edit_check(user_id: int = Query(...)):
 
     return last_check_store[user_id]
 
+
 @router.get("/edit-saved-check")
-async def edit_saved_check(id: int, db: AsyncSession = Depends(get_db_session)):
-    result = await db.execute(select(ReceiptDB).where(ReceiptDB.id == id))
+async def edit_saved_check(
+    id: int,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Редактирование СХРАНЁННОГО чека — только владелец (JWT.sub)."""
+    user_id = int(user["sub"])
+
+    # ВАЖНО: проверяем, что чек принадлежит текущему пользователю
+    result = await db.execute(
+        select(ReceiptDB).where(
+            ReceiptDB.id == id,
+            ReceiptDB.user_id == user_id
+        )
+    )
     receipt = result.scalar()
     if not receipt:
+        # 404, чтобы не раскрывать наличие чужих записей
         raise HTTPException(status_code=404, detail="Чек не найден")
 
     items_result = await db.execute(select(ReceiptItemDB).where(ReceiptItemDB.receipt_id == id))
@@ -186,12 +210,15 @@ async def edit_saved_check(id: int, db: AsyncSession = Depends(get_db_session)):
 
 @router.get("/saved-checks")
 async def get_saved_checks(
-    user_id: int = Query(...),
     period: str = Query("month", pattern="^(day|week|month|year)$"),
     full: bool = Query(False, description="false — короткий вид, true — полный"),
     product_id: Optional[int] = Query(None, description="Фильтр: только чеки с этим product_id"),
+    user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
+    """Список сохранённых чеков за период — доступ только по JWT."""
+    user_id = int(user["sub"])
+
     # --- границы периода по дате СОХРАНЕНИЯ ---
     today = date.today()
     if period == "day":
@@ -214,7 +241,6 @@ async def get_saved_checks(
         .where(
             and_(
                 ReceiptDB.user_id == user_id,
-                # сравнение по дате сохранения
                 func.date(ReceiptDB.created_at) >= start_str,
                 func.date(ReceiptDB.created_at) <= end_str,
             )
@@ -237,12 +263,12 @@ async def get_saved_checks(
             {
                 "id": r.id,
                 "store": r.store,
-                "date": r.date,               # дата на чеке — оставляем как есть
+                "date": r.date,
                 "time": r.time,
                 "total": r.total,
                 "currency": r.currency,
                 "image_url": r.image_url,
-                "saved_at": (r.created_at.isoformat() if r.created_at else None),  # полезно видеть
+                "saved_at": (r.created_at.isoformat() if r.created_at else None),
             }
             for r in receipts
         ]
