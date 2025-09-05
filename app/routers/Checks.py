@@ -23,6 +23,21 @@ router = APIRouter()
 STATIC_RECEIPT_DIR = "/app/static/receipts"
 os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
+BASE_URL = os.getenv("BASE_URL", "https://mixfom2025.fvds.ru")
+
+
+def _get_full_image_url(image_url: str) -> str:
+    if not image_url:
+        return image_url
+
+    if image_url.startswith(('http://', 'https://')):
+        return image_url
+
+    if not image_url.startswith('/'):
+        image_url = '/' + image_url
+
+    return f"{BASE_URL}{image_url}"
+
 
 
 @router.get("/last-check")
@@ -62,7 +77,7 @@ async def get_last_check(
             "time": receipt.time,
             "total": receipt.total,
             "currency": receipt.currency,
-            "image_url": receipt.image_url,
+            "image_url": _get_full_image_url(receipt.image_url),
             "items": [item.__dict__ for item in items]
         })
 
@@ -205,7 +220,7 @@ async def edit_saved_check(
         "time": receipt.time,
         "total": receipt.total,
         "currency": receipt.currency,
-        "image_url": receipt.image_url,
+        "image_url": _get_full_image_url(receipt.image_url),
         "items": [item.__dict__ for item in items]
     }
 
@@ -268,7 +283,7 @@ async def get_saved_checks(
                 "time": r.time,
                 "total": r.total,
                 "currency": r.currency,
-                "image_url": r.image_url,
+                "image_url": _get_full_image_url(r.image_url),
                 "saved_at": (r.created_at.isoformat() if r.created_at else None),
             }
             for r in receipts
@@ -329,7 +344,7 @@ async def get_saved_checks(
             "time": r.time,
             "total": r.total,
             "currency": r.currency,
-            "image_url": r.image_url,
+            "image_url": _get_full_image_url(r.image_url),
             "saved_at": (r.created_at.isoformat() if r.created_at else None),
             "items": items_by_receipt.get(r.id, []),
         }
