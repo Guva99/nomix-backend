@@ -144,29 +144,43 @@ class TelegramBot:
 
     async def setup_webhook(self) -> None:
         await self.initialize()
-        secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
-        await self.bot.set_webhook(
-            url=WEBHOOK_URL,
-            drop_pending_updates=False,         # не теряем апдейты при рестарте
-            secret_token=secret,
-            allowed_updates=["message", "callback_query"],
-        )
-        logger.info("Webhook set to %s (secret: %s)", WEBHOOK_URL, "yes" if secret else "no")
 
-        # Диагностика
+        # Сначала удаляем старый вебхук
         try:
-            info = await self.bot.get_webhook_info()
-            logger.info(
-                "Webhook info: url=%s pending=%s last_error_date=%s last_error_message=%s",
-                info.url, info.pending_update_count,
-                getattr(info, "last_error_date", None),
-                getattr(info, "last_error_message", None),
-            )
+            await self.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("🗑 Old webhook deleted")
+            await asyncio.sleep(2)
         except Exception as e:
-            logger.warning("Failed to get webhook info: %s", e)
+            logger.warning(f"Failed to delete old webhook: {e}")
+
+        secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+        try:
+            # Устанавливаем вебхук с правильными параметрами
+            result = await self.bot.set_webhook(
+                url=WEBHOOK_URL,
+                drop_pending_updates=True,  # важно поставить True
+                secret_token=secret,
+                allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
+                max_connections=40,
+                ip_address=None,  # пусть Telegram сам определяет IP
+            )
+            logger.info(f"✅ Webhook set to {WEBHOOK_URL}, result: {result}")
+
+            # Проверяем информацию о вебхуке
+            webhook_info = await self.bot.get_webhook_info()
+            logger.info(f"📋 Webhook info: {webhook_info}")
+
+        except Exception as e:
+            logger.error(f"❌ Failed to set webhook: {e}")
+            raise
 
     async def process_update(self, update: dict) -> None:
         await self.initialize()
+
+        # Логируем получение обновления
+        update_id = update.get('update_id')
+        logger.info(f"📨 Received update: {update_id}")
+
         if self.dp:
             await self.dp.feed_update(self.bot, types.Update(**update))
 
