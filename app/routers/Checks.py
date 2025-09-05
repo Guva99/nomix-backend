@@ -243,8 +243,7 @@ async def get_saved_checks(
         .where(
             and_(
                 ReceiptDB.user_id == user_id,
-                func.date(ReceiptDB.created_at) >= start_date,  # объект date
-                func.date(ReceiptDB.created_at) <= end_date,  # объект date
+                func.date(ReceiptDB.created_at).between(start, today)
             )
         )
         .order_by(ReceiptDB.created_at.desc(), ReceiptDB.id.desc())
@@ -253,8 +252,8 @@ async def get_saved_checks(
     if product_id is not None:
         q = (
             q.join(ReceiptItemDB, ReceiptItemDB.receipt_id == ReceiptDB.id)
-             .where(ReceiptItemDB.product_id == product_id)
-             .distinct()
+            .where(ReceiptItemDB.product_id == product_id)
+            .distinct()
         )
 
     result = await db.execute(q)
@@ -276,8 +275,8 @@ async def get_saved_checks(
         ]
         return {
             "period": period,
-            "from_date": start_str,
-            "to_date": end_str,
+            "from_date": start.isoformat(),
+            "to_date": today.isoformat(),
             "filter_product_id": product_id,
             "saved_checks": data,
             "count": len(data),
@@ -339,8 +338,8 @@ async def get_saved_checks(
 
     return {
         "period": period,
-        "from_date": start_date.isoformat(),
-        "to_date": end_date.isoformat(),
+        "from_date": start.isoformat(),
+        "to_date": today.isoformat(),
         "filter_product_id": product_id,
         "saved_checks": data,
         "count": len(data),
