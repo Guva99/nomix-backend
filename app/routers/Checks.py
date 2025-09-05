@@ -234,8 +234,8 @@ async def get_saved_checks(
     else:
         start = date(today.year, today.month, 1)
 
-    start_str = start.isoformat()
-    end_str = today.isoformat()
+    start_date = start
+    end_date = today
 
     # --- база чеков за период (по created_at) ---
     q = (
@@ -243,8 +243,8 @@ async def get_saved_checks(
         .where(
             and_(
                 ReceiptDB.user_id == user_id,
-                func.date(ReceiptDB.created_at) >= start_str,
-                func.date(ReceiptDB.created_at) <= end_str,
+                func.date(ReceiptDB.created_at) >= start_date,  # объект date
+                func.date(ReceiptDB.created_at) <= end_date,  # объект date
             )
         )
         .order_by(ReceiptDB.created_at.desc(), ReceiptDB.id.desc())
@@ -339,8 +339,8 @@ async def get_saved_checks(
 
     return {
         "period": period,
-        "from_date": start_str,
-        "to_date": end_str,
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
         "filter_product_id": product_id,
         "saved_checks": data,
         "count": len(data),

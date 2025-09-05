@@ -140,7 +140,6 @@ class TelegramBot:
             )
         )
 
-        # Хэндлеры
         self.dp.message.register(self._cmd_start, CommandStart())
         self.dp.message.register(self._cmd_save, Command("save"))
         self.dp.callback_query.register(self._on_callback_confirm_save, F.data == "confirm_save")
