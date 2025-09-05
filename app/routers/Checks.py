@@ -105,7 +105,7 @@ async def save_check(
             dest_path = os.path.join(STATIC_RECEIPT_DIR, filename)
             try:
                 shutil.move(tmp_path, dest_path)
-                image_url = f"/static/receipts/{filename}"
+                image_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
                 if payload.user_id in last_check_store:
                     last_check_store[payload.user_id]["image_filename"] = filename
                     last_check_store[payload.user_id]["image_url"] = image_url
