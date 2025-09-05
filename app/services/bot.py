@@ -125,7 +125,20 @@ class TelegramBot:
 
         # единый httpx клиент
         headers = {"X-Internal-Secret": INTERNAL_API_SECRET} if INTERNAL_API_SECRET else {}
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(120.0), headers=headers)
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=30.0,
+                read=120.0,
+                write=30.0,
+                pool=30.0
+            ),
+            headers=headers,
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+                keepalive_expiry=60.0
+            )
+        )
 
         # Хэндлеры
         self.dp.message.register(self._cmd_start, CommandStart())
@@ -145,7 +158,6 @@ class TelegramBot:
     async def setup_webhook(self) -> None:
         await self.initialize()
 
-        # Сначала удаляем старый вебхук
         try:
             await self.bot.delete_webhook(drop_pending_updates=True)
             logger.info("🗑 Old webhook deleted")
