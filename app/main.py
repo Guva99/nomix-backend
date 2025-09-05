@@ -17,7 +17,7 @@ from app.routers.products import router as products
 # Настройка логирования
 logging.basicConfig(
     format="%(asctime)s — %(levelname)s — %(name)s — %(message)s",
-    level=logging.INFO,
+    level=logging.DEBUG,
 )
 logger = logging.getLogger(__name__)
 
@@ -70,9 +70,10 @@ async def on_startup():
         logger.critical(f"❌ Bot initialization failed: {e}")
         raise
 
+
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(req: Request):
-    # Проверяем секрет Telegram (если задан)
+    # Проверяем секрет Telegram
     secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
     if secret:
         hdr = req.headers.get("X-Telegram-Bot-Api-Secret-Token")
@@ -81,9 +82,18 @@ async def telegram_webhook(req: Request):
 
     data = await req.json()
 
-    asyncio.create_task(bot.process_update(data))
+    # Запускаем обработку в фоне, НЕ блокируя ответ
+    asyncio.create_task(process_telegram_update(data))
 
     return Response(status_code=200)
+
+
+async def process_telegram_update(data: dict):
+    """Асинхронная обработка обновления"""
+    try:
+        await bot.process_update(data)
+    except Exception as e:
+        logger.error(f"Error processing update: {e}")
 
 @app.get("/health")
 async def health_check():

@@ -395,25 +395,28 @@ class TelegramBot:
             user_id = message.from_user.id
             waiting_for_photo.discard(user_id)
 
-            # отменим существующий таймер-напоминалку (если был)
+            # Отменяем таймер
             t = self._reminders.pop(user_id, None)
             if t and not t.done():
                 t.cancel()
 
+            # НЕМЕДЛЕННЫЙ ответ пользователю
+            await message.answer("🔍 Чек получен. Начинаю обработку…",
+                                 reply_markup=reply_keyboard())
+
+            # Получаем информацию о файле асинхронно
             photo = message.photo[-1]
             file = await self.bot.get_file(photo.file_id)
             path = file.file_path
             file_url = path if str(path).startswith("https://") else f"https://api.telegram.org/file/bot{TOKEN}/{path}"
+            asyncio.create_task(
+                self._process_check_background(message.chat.id, file_url, user_id)
+            )
 
-            # быстрый ответ — отпускаем вебхук
-            await message.answer("🔍 Чек получен. Начинаю обработку…", reply_markup=reply_keyboard())
-
-            # тяжёлую работу — в фон
-            asyncio.create_task(self._process_check_background(message.chat.id, file_url, user_id))
-
-        except Exception:
-            logger.exception("Ошибка при подготовке обработки фото")
-            await message.answer("🚫 Произошла ошибка при обработке изображения.", reply_markup=reply_keyboard())
+        except Exception as e:
+            logger.error(f"Ошибка при обработке фото: {e}")
+            await message.answer("🚫 Произошла ошибка при обработке изображения.",
+                                 reply_markup=reply_keyboard())
 
 
 bot = TelegramBot()
