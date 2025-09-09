@@ -95,7 +95,7 @@ async def process_telegram_update(data: dict):
     except Exception as e:
         logger.error(f"Error processing update: {e}")
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     """Эндпоинт для проверки работоспособности"""
     try:
