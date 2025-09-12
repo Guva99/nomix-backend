@@ -4,8 +4,6 @@ services:
   backend:
     build:
       context: .
-      args:
-        GITHUB_TOKEN: ${GITHUB_TOKEN}
     env_file: .env
     volumes:
       - receipts_data:/app/static/receipts
@@ -18,7 +16,6 @@ services:
       DATABASE_RETRY_DELAY: ${DATABASE_RETRY_DELAY}
       DATABASE_MAX_RETRIES: ${DATABASE_MAX_RETRIES}
     healthcheck:
-      # Вариант без curl (есть в любом образе Python)
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).read(); sys.exit(0)\""]
       interval: 30s
       timeout: 10s
@@ -31,7 +28,6 @@ services:
       resources:
         limits:
           memory: 4G
-          cpus: "2.0"
         reservations:
           memory: 512M
           cpus: "0.5"
