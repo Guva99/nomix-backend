@@ -10,8 +10,12 @@ RUN pip install --no-cache-dir -U pip \
 COPY app ./app
 COPY alembic.ini /app/alembic.ini
 
-RUN useradd -m appuser
+# >>> добавь эти строки
+RUN mkdir -p /app/static/receipts /app/static/tmp \
+    && adduser --disabled-password --gecos "" appuser \
+    && chown -R appuser:appuser /app
+# <<<
+
 USER appuser
 
-# Однострочный exec-form CMD (без переносов)
 CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.main:app","-b","0.0.0.0:8000","-w","3","--timeout","60","--graceful-timeout","30"]
