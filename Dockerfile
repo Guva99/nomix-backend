@@ -13,6 +13,5 @@ COPY alembic.ini /app/alembic.ini
 RUN useradd -m appuser
 USER appuser
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "app.main:app",
-     "-b", "0.0.0.0:8000", "-w", "3", "--timeout", "60", "--graceful-timeout", "30"]
-
+# Однострочный exec-form CMD (без переносов)
+CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.main:app","-b","0.0.0.0:8000","-w","3","--timeout","60","--graceful-timeout","30"]
