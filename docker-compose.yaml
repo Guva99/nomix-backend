@@ -17,13 +17,29 @@ services:
     environment:
       DATABASE_RETRY_DELAY: ${DATABASE_RETRY_DELAY}
       DATABASE_MAX_RETRIES: ${DATABASE_MAX_RETRIES}
-    restart: unless-stopped
+    healthcheck:
+      # Вариант без curl (есть в любом образе Python)
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).read(); sys.exit(0)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: always
     networks:
       - app-network
     deploy:
       resources:
         limits:
           memory: 4G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   postgres:
     image: postgres:15-alpine
@@ -31,15 +47,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U numix -d numix" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-numix} -d ${POSTGRES_DB:-numix}"]
       interval: 5s
       timeout: 5s
       retries: 10
-    environment:
-      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD}
+    restart: always
     networks:
       - app-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   nginx:
     image: nginx:1.23-alpine
@@ -51,10 +73,16 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: always
     networks:
       - app-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 networks:
   app-network:

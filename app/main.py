@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+import time
 
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,18 +74,17 @@ async def on_startup():
 
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(req: Request):
-    # Проверяем секрет Telegram
     secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
-    if secret:
-        hdr = req.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if hdr != secret:
-            raise HTTPException(status_code=403, detail="Bad secret")
+    if secret and req.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+        raise HTTPException(status_code=403, detail="Bad secret")
 
+    t0 = time.perf_counter()
     data = await req.json()
-
-    # Запускаем обработку в фоне, НЕ блокируя ответ
+    t1 = time.perf_counter()
     asyncio.create_task(process_telegram_update(data))
-
+    t2 = time.perf_counter()
+    logger.info("WH: parse_json=%.1fms schedule=%.1fms",
+                (t1 - t0) * 1000, (t2 - t1) * 1000)
     return Response(status_code=200)
 
 
