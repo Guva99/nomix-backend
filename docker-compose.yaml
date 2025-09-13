@@ -18,14 +18,7 @@ services:
     expose:
       - "8000"
     depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5).read(); sys.exit(0)\""]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 90s
+      - postgres
     restart: always
     networks: [app-network]
     cpus: "0.90"
@@ -46,11 +39,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-numix} -d ${POSTGRES_DB:-numix}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
     restart: always
     networks: [app-network]
     logging:
@@ -67,14 +55,7 @@ services:
       - "80:80"
       - "443:443"
     depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: [ "CMD-SHELL", "wget -qO- http://localhost/ || exit 1" ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      - backend
     restart: always
     networks: [ app-network ]
 
