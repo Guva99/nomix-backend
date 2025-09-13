@@ -3,6 +3,7 @@ import logging
 import os
 from datetime import datetime
 import time
+import threading
 
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,8 +44,21 @@ app.include_router(gpt,      prefix="/api/bot",      tags=["GPT"])
 app.include_router(checks,   prefix="/api/receipts", tags=["Чеки"])
 app.include_router(products, prefix="/api",          tags=["Продукты"])
 
+_init_lock = threading.Lock()
+_app_initialized = False
+
 @app.on_event("startup")
 async def on_startup():
+    global _app_initialized
+
+    # Блокируем для thread-safe инициализации
+    with _init_lock:
+        if _app_initialized:
+            logger.info("🚀 Worker started (already initialized)")
+            return
+
+        _app_initialized = True
+
     max_retries = int(os.getenv("DATABASE_MAX_RETRIES", "10"))
     retry_delay = int(os.getenv("DATABASE_RETRY_DELAY", "5"))
 
@@ -62,14 +76,15 @@ async def on_startup():
             logger.warning(f"⚠️ DB connection failed (attempt {attempt + 1}), retrying in {retry_delay}s...")
             await asyncio.sleep(retry_delay)
 
-    # Инициализация бота
+    # Инициализация бота (только один раз!)
     try:
         await bot.initialize()
         await bot.setup_webhook()
         logger.info("🤖 Bot initialized successfully")
     except Exception as e:
         logger.critical(f"❌ Bot initialization failed: {e}")
-        raise
+        # Не падаем полностью, чтобы воркеры могли работать
+        logger.warning("⚠️ Bot initialization failed, but continuing without bot")
 
 
 @app.post("/api/telegram/webhook")

@@ -18,4 +18,4 @@ RUN mkdir -p /app/static/receipts /app/static/tmp \
 
 USER appuser
 
-CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.main:app","-b","0.0.0.0:8000","-w","3","--timeout","60","--graceful-timeout","30"]
+CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.main:app","-b","0.0.0.0:8000","-w","3","--timeout","60","--graceful-timeout","30","--preload"]

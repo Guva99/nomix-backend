@@ -18,6 +18,7 @@ from aiogram.types import (
 from aiogram.filters import Command, CommandStart
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramRetryAfter
 from html import escape
 
 from app.services.GPT import last_check_store
@@ -120,70 +121,97 @@ class TelegramBot:
     async def initialize(self) -> None:
         if self.bot:
             return
-        self.bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        self.dp = Dispatcher()
 
-        # единый httpx клиент
-        headers = {"X-Internal-Secret": INTERNAL_API_SECRET} if INTERNAL_API_SECRET else {}
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=30.0,
-                read=120.0,
-                write=30.0,
-                pool=30.0
-            ),
-            headers=headers,
-            limits=httpx.Limits(
-                max_connections=100,
-                max_keepalive_connections=20,
-                keepalive_expiry=60.0
+        try:
+            self.bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+            self.dp = Dispatcher()
+
+            # единый httpx клиент
+            headers = {"X-Internal-Secret": INTERNAL_API_SECRET} if INTERNAL_API_SECRET else {}
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=30.0,
+                    read=120.0,
+                    write=30.0,
+                    pool=30.0
+                ),
+                headers=headers,
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=20,
+                    keepalive_expiry=60.0
+                )
             )
-        )
 
-        self.dp.message.register(self._cmd_start, CommandStart())
-        self.dp.message.register(self._cmd_save, Command("save"))
-        self.dp.callback_query.register(self._on_callback_confirm_save, F.data == "confirm_save")
-        self.dp.callback_query.register(self._on_menu_selection)
-        self.dp.message.register(self._handle_photo, F.photo)
-        self.dp.message.register(self._handle_text_buttons, F.text & ~F.command)
+            self.dp.message.register(self._cmd_start, CommandStart())
+            self.dp.message.register(self._cmd_save, Command("save"))
+            self.dp.callback_query.register(self._on_callback_confirm_save, F.data == "confirm_save")
+            self.dp.callback_query.register(self._on_menu_selection)
+            self.dp.message.register(self._handle_photo, F.photo)
+            self.dp.message.register(self._handle_text_buttons, F.text & ~F.command)
 
-        # Кнопка mini-app
-        versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-        await self.bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(text="Открыть приложение", web_app=WebAppInfo(url=versioned_url))
-        )
-        logger.info("Telegram bot initialized")
+            # Кнопка mini-app
+            versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+            await self.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(text="Открыть приложение", web_app=WebAppInfo(url=versioned_url))
+            )
+            logger.info("Telegram bot initialized")
+
+        except Exception as e:
+            logger.error(f"❌ Bot initialization failed: {e}")
+            raise
 
     async def setup_webhook(self) -> None:
         await self.initialize()
 
-        try:
-            await self.bot.delete_webhook(drop_pending_updates=True)
-            logger.info("🗑 Old webhook deleted")
-            await asyncio.sleep(2)
-        except Exception as e:
-            logger.warning(f"Failed to delete old webhook: {e}")
-
         secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
-        try:
-            # Устанавливаем вебхук с правильными параметрами
-            result = await self.bot.set_webhook(
-                url=WEBHOOK_URL,
-                drop_pending_updates=True,  # важно поставить True
-                secret_token=secret,
-                allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
-                max_connections=40,
-                ip_address=None,  # пусть Telegram сам определяет IP
-            )
-            logger.info(f"✅ Webhook set to {WEBHOOK_URL}, result: {result}")
+        max_retries = 3
+        retry_delay = 2  # начальная задержка в секундах
 
-            # Проверяем информацию о вебхуке
-            webhook_info = await self.bot.get_webhook_info()
-            logger.info(f"📋 Webhook info: {webhook_info}")
+        for attempt in range(max_retries):
+            try:
+                # Сначала удаляем старый вебхук
+                await self.bot.delete_webhook(drop_pending_updates=True)
+                logger.info("🗑 Old webhook deleted")
 
-        except Exception as e:
-            logger.error(f"❌ Failed to set webhook: {e}")
-            raise
+                # Ждем немного перед установкой нового
+                await asyncio.sleep(1)
+
+                # Устанавливаем новый вебхук
+                result = await self.bot.set_webhook(
+                    url=WEBHOOK_URL,
+                    drop_pending_updates=True,
+                    secret_token=secret,
+                    allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
+                    max_connections=40,
+                    ip_address=None,
+                )
+
+                logger.info(f"✅ Webhook set to {WEBHOOK_URL}, result: {result}")
+
+                # Проверяем информацию о вебхуке
+                webhook_info = await self.bot.get_webhook_info()
+                logger.info(f"📋 Webhook info: {webhook_info}")
+
+                return  # Успешно выходим
+
+            except TelegramRetryAfter as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"❌ Failed to set webhook after {max_retries} attempts: {e}")
+                    raise
+
+                wait_time = e.retry_after
+                logger.warning(f"⚠️ Rate limited (attempt {attempt + 1}), retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"❌ Failed to set webhook after {max_retries} attempts: {e}")
+                    raise
+
+                logger.warning(f"⚠️ Webhook setup failed (attempt {attempt + 1}), retrying in {retry_delay}s: {e}")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
 
     async def process_update(self, update: dict) -> None:
         await self.initialize()
