@@ -15,6 +15,7 @@ from app.routers.data import router as data
 from app.routers.gpt import router as gpt
 from app.routers.Checks import router as checks
 from app.routers.products import router as products
+from app.routers.statistics import router as statistics
 
 # Настройка логирования
 logging.basicConfig(
@@ -43,6 +44,7 @@ app.include_router(data,     prefix="/api/data",     tags=["Database"])
 app.include_router(gpt,      prefix="/api/bot",      tags=["GPT"])
 app.include_router(checks,   prefix="/api/receipts", tags=["Чеки"])
 app.include_router(products, prefix="/api",          tags=["Продукты"])
+app.include_router(statistics, prefix="/api", tags=["Статистика"])
 
 _init_lock = threading.Lock()
 _app_initialized = False

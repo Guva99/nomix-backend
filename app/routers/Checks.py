@@ -360,3 +360,6 @@ async def get_saved_checks(
         "count": len(data),
         "total_amount": round(sum((r.total or 0) for r in receipts), 2),
     }
+
+
+
