@@ -150,11 +150,6 @@ class TelegramBot:
             self.dp.message.register(self._handle_photo, F.photo)
             self.dp.message.register(self._handle_text_buttons, F.text & ~F.command)
 
-            # Кнопка mini-app
-            versioned_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
-            await self.bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(text="Открыть приложение", web_app=WebAppInfo(url=versioned_url))
-            )
             logger.info("Telegram bot initialized")
 
         except Exception as e:
