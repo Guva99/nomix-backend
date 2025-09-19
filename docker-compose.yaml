@@ -12,7 +12,7 @@ services:
       WEBHOOK_URL: https://mixfom2025.fvds.ru/api/telegram/webhook
       TMP_DIR: /app/static/tmp
     command: ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.main:app",
-              "-b","0.0.0.0:8000","-w","3","--timeout","60","--graceful-timeout","30"]
+              "-b","0.0.0.0:8000","-w","1","--timeout","60","--graceful-timeout","30"]
     volumes:
       - receipts_data:/app/static/receipts
     expose:
