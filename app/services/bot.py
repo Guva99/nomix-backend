@@ -100,7 +100,7 @@ def render_receipt_message(receipt: dict, user_id: int) -> tuple[str, InlineKeyb
 
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/approve"))],
+            [InlineKeyboardButton(text="✏️ Редактировать", web_app=WebAppInfo(url="https://nomix-d6199.web.app/editCheck"))],
             [InlineKeyboardButton(text="✅ Сохранить", callback_data="confirm_save")],
         ]
     )

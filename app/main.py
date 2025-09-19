@@ -44,7 +44,7 @@ app.include_router(data,     prefix="/api/data",     tags=["Database"])
 app.include_router(gpt,      prefix="/api/bot",      tags=["GPT"])
 app.include_router(checks,   prefix="/api/receipts", tags=["Чеки"])
 app.include_router(products, prefix="/api",          tags=["Продукты"])
-app.include_router(statistics, prefix="/api", tags=["Статистика"])
+app.include_router(statistics, prefix="/api",        tags=["Статистика"])
 
 _init_lock = threading.Lock()
 _app_initialized = False
