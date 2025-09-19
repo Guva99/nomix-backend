@@ -172,11 +172,11 @@ class TelegramBot:
                 # Ждем немного перед установкой нового
                 await asyncio.sleep(1)
 
-                # Устанавливаем новый вебхук
+                # Устанавливаем новый вебхук С СЕКРЕТНЫМ ТОКЕНОМ
                 result = await self.bot.set_webhook(
                     url=WEBHOOK_URL,
                     drop_pending_updates=True,
-                    secret_token=secret,
+                    secret_token=secret,  # ← ДОБАВЬТЕ ЭТУ СТРОКУ
                     allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
                     max_connections=40,
                     ip_address=None,
