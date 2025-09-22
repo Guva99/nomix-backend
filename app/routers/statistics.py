@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db_session
 from app.models.db.receipt import ReceiptDB, ReceiptItemDB
 from app.models.db.product import ProductDB
-from app.models.Statics import StatisticsResponse, Summary, CategoryStat, TopItem
+from app.models.Statistics import StatisticsResponse, Summary, CategoryStat, TopItem
 from app.deps.auth import get_current_user  # <-- JWT
 
 router = APIRouter()
@@ -21,7 +21,7 @@ def purchased_at_expr():
         literal_column("'YYYY-MM-DD HH24:MI'")
     )
 
-@router.get("/api/statistics", response_model=StatisticsResponse, summary="Статистика расходов пользователя")
+@router.get("/statistics", response_model=StatisticsResponse, summary="Статистика расходов пользователя")
 async def get_statistics(
     request: Request,
     db: AsyncSession = Depends(get_db_session),

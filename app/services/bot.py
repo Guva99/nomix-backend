@@ -172,7 +172,6 @@ class TelegramBot:
                 # Ждем немного перед установкой нового
                 await asyncio.sleep(1)
 
-                # Устанавливаем новый вебхук С СЕКРЕТНЫМ ТОКЕНОМ
                 result = await self.bot.set_webhook(
                     url=WEBHOOK_URL,
                     drop_pending_updates=True,
