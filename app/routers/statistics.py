@@ -199,75 +199,106 @@ async def get_statistics(
 
 # ---------- daily series for charts ----------
 
-@router.get("/statistics/series", summary="Дневные суммы по месяцу (+предыдущий месяц) для графика")
-async def get_month_series(
-    month: Optional[str] = Query(None, description="YYYY-MM; по умолчанию — текущий месяц"),
-    db: AsyncSession = Depends(get_db_session),
-    user=Depends(get_current_user),
+@router.get("/statistics/month", summary="омесячная статистика: категории + товары внутри (без рядов по дням)")
+async def get_month_categories(
+        month: Optional[str] =Query(None, description="YYYY-MM; если не указано — текущий месяц"),
+        items_limit: int = Query(10, ge=1, le=100, description="Сколько топ-товаров на категорию"),
+        db: AsyncSession = Depends(get_db_session),
+        user = Depends(get_current_user),
 ):
     uid = int(user["sub"])
 
-    # месяц по умолчанию — текущий
     if not month:
         today = datetime.utcnow()
         month = f"{today.year:04d}-{today.month:02d}"
 
-    # текущий и прошлый месяцы (границы включительно)
-    cur_from, cur_to = month_bounds(month)
-    prev_month = prev_month_str(month)
-    prv_from, prv_to = month_bounds(prev_month)
-
+    dt_from, dt_to = get_month_categories(month)
     ts = purchased_at_expr()
 
-    # агрегаты по ДНЯМ текущего месяца
-    cur_q = (
+    summary_q = (
         select(
-            func.date_trunc('day', ts).label('d'),
-            func.coalesce(func.sum(ReceiptDB.total), 0.0).label("sum")
+            func.coalesce(func.sum(ReceiptDB.total), 0.0),
+            func.count(ReceiptDB.id),
+            func.coalesce(func.avg(ReceiptItemDB.total), 0.0),
+            func.count(func.distinct(ReceiptDB.store)),
         )
-        .where((ReceiptDB.user_id == uid) & (ts >= cur_from) & (ts <= cur_to))
-        .group_by(literal_column("d"))
-        .order_by(literal_column("d"))
+        .where(
+            (ReceiptDB.user_id == uid) &
+            (ts >= dt_from) &
+            (ts <= dt_to)
+        )
     )
-    cur_rows = (await db.execute(cur_q)).all()
-    cur_map: Dict[str, float] = {r.d.date().isoformat(): float(r.sum or 0) for r in cur_rows}
+    total_spend, purchase_count, avg_ticket, unique_stores = (await db.execute(summary_q)).one()
 
-    # агрегаты по ДНЯМ прошлого месяца
-    prv_q = (
+    cat_q = (
         select(
-            func.date_trunc('day', ts).label('d'),
-            func.coalesce(func.sum(ReceiptDB.total), 0.0).label("sum")
+            ReceiptItemDB.category_id.label("cid"),
+            ReceiptItemDB.category.label("cname"),
+            func.coalesce(func.sum(ReceiptItemDB.price), 0.0).label("total_spent"),
+            func.count(ReceiptItemDB.id).label("purchase_count"),
+            func.coalesce(func.avg(ReceiptItemDB.price), 0.0).label("avg_item_price"),
         )
-        .where((ReceiptDB.user_id == uid) & (ts >= prv_from) & (ts <= prv_to))
-        .group_by(literal_column("d"))
-        .order_by(literal_column("d"))
+        .join(ReceiptDB, ReceiptDB.id == ReceiptItemDB.receipt_id)
+        .where(
+            (ReceiptDB.user_id == uid) &
+            (ts >= dt_from) &
+            (ts <= dt_to)
+        )
+        .group_by(literal_column("cid"), literal_column("cname"))
+        .order_by(literal_column("total_spent").desc())
     )
-    prv_rows = (await db.execute(prv_q)).all()
-    prv_map: Dict[str, float] = {r.d.date().isoformat(): float(r.sum or 0) for r in prv_rows}
+    cat_rows = (await db.execute(cat_q)).all()
 
-    # полный ряд дней для текущего месяца
-    days_in_month = calendar.monthrange(cur_from.year, cur_from.month)[1]
-    days: List[str] = [
-        datetime(cur_from.year, cur_from.month, d).date().isoformat()
-        for d in range(1, days_in_month + 1)
-    ]
+    items_q = (
+        select(
+            ReceiptItemDB.category_id.label("cid"),
+            ReceiptItemDB.category.label("cname"),
+            ProductDB.name.label("name"),
+            func.coalesce(func.sum(ReceiptItemDB.price), 0.0).label("total_spent"),
+            func.count(ReceiptItemDB.id).label("purchase_count"),
+        )
+        .join(ReceiptDB, ReceiptDB.id == ReceiptItemDB.receipt_id)
+        .join(ProductDB, ProductDB.id == ReceiptItemDB.product_id, isouter=True)
+        .where(
+            (ReceiptDB.user_id == uid) &
+            (ts >= dt_from) &
+            (ts <= dt_to)
+        )
+        .group_by(literal_column("cid"), literal_column("cname"), ProductDB.name)
+        .order_by(literal_column("cid").asc(),literal_column("total_spent").desc())
+    )
+    items_rows = (await db.execute(items_q)).all()
 
-    current = [cur_map.get(day, 0.0) for day in days]
+    items_by_cat : Dict[int, List[Dict]] = {}
+    for r in items_rows:
+        cid = int(r.cid or 0)
+        items_by_cat.setdefault(cid, [])
+        items_by_cat[cid].append({
+            "name": r.name or "-",
+            "total_spent": float(r.total_spent or 0),
+            "count": int(r.count or 0),
+        })
 
-    # прошлый месяц — выравниваем по номеру дня
-    prv_days_in_month = calendar.monthrange(prv_from.year, prv_from.month)[1]
-    previous: List[float] = []
-    for d in range(1, days_in_month + 1):
-        if d <= prv_days_in_month:
-            key = datetime(prv_from.year, prv_from.month, d).date().isoformat()
-            previous.append(prv_map.get(key, 0.0))
-        else:
-            previous.append(0.0)
+    categories: List[Dict] = []
+    for r in cat_rows:
+        cid = int(r.cid or 0)
+        categories.append({
+            "category_id": cid,
+            "category": r.cname,
+            "total_spent": float(r.total_spent or 0),
+            "purchase_count": int(r.purchase_count or 0),
+            "avg_item_price": float(r.avg_item_price or 0),
+            "items": (items_by_cat.get(cid, [])[:items_limit]),
+        })
 
     return {
         "user_id": uid,
         "month": month,
-        "days": days,        # ISO-даты текущего месяца (для подписей оси X можно преобразовать на фронте)
-        "current": current,  # суммы по дням текущего месяца
-        "previous": previous # суммы прошлого месяца, выровненные по номеру дня
+        "summary": {
+            "total_spent": float(total_spend or 0),
+            "purchase_count": int(purchase_count or 0),
+            "avg_ticket": float(avg_ticket or 0),
+            "unique_stores": int(unique_stores or 0),
+        },
+        "categories": categories
     }
