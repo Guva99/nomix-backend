@@ -50,7 +50,7 @@ def prev_month_str(ym: str) -> str:
         return f"{y-1}-12"
     return f"{y:04d}-{m-1:02d}"
 
-# ---------- main statistics ----------
+# ---------- СТАРАЯ ручка (оставлена как была, с месячным режимом) ----------
 
 @router.get("/statistics", response_model=StatisticsResponse, summary="Статистика расходов пользователя")
 async def get_statistics(
@@ -197,29 +197,32 @@ async def get_statistics(
         top_items=top_items,
     )
 
-# ---------- daily series for charts ----------
+# ---------- НОВАЯ ручка: помесячно, категории + товары внутри ----------
 
-@router.get("/statistics/month", summary="омесячная статистика: категории + товары внутри (без рядов по дням)")
+@router.get("/statistics/month", summary="Помесячная статистика: категории + товары внутри (без рядов по дням)")
 async def get_month_categories(
-        month: Optional[str] =Query(None, description="YYYY-MM; если не указано — текущий месяц"),
-        items_limit: int = Query(10, ge=1, le=100, description="Сколько топ-товаров на категорию"),
-        db: AsyncSession = Depends(get_db_session),
-        user = Depends(get_current_user),
+    month: Optional[str] = Query(None, description="YYYY-MM; если не указано — текущий месяц"),
+    items_limit: int = Query(10, ge=1, le=100, description="Сколько топ-товаров на категорию"),
+    db: AsyncSession = Depends(get_db_session),
+    user=Depends(get_current_user),
 ):
     uid = int(user["sub"])
 
+    # месяц по умолчанию — текущий
     if not month:
         today = datetime.utcnow()
         month = f"{today.year:04d}-{today.month:02d}"
 
-    dt_from, dt_to = get_month_categories(month)
+    # ГРАНИЦЫ МЕСЯЦА (исправлено: вызывали рекурсивно себя)
+    dt_from, dt_to = month_bounds(month)
     ts = purchased_at_expr()
 
+    # Summary по месяцу
     summary_q = (
         select(
             func.coalesce(func.sum(ReceiptDB.total), 0.0),
             func.count(ReceiptDB.id),
-            func.coalesce(func.avg(ReceiptItemDB.total), 0.0),
+            func.coalesce(func.avg(ReceiptDB.total), 0.0),  # средний чек
             func.count(func.distinct(ReceiptDB.store)),
         )
         .where(
@@ -228,9 +231,10 @@ async def get_month_categories(
             (ts <= dt_to)
         )
     )
-    total_spend, purchase_count, avg_ticket, unique_stores = (await db.execute(summary_q)).one()
+    total_spent, purchase_count, avg_ticket, unique_stores = (await db.execute(summary_q)).one()
 
-    cat_q = (
+    # Агрегация по категориям
+    cats_q = (
         select(
             ReceiptItemDB.category_id.label("cid"),
             ReceiptItemDB.category.label("cname"),
@@ -244,18 +248,20 @@ async def get_month_categories(
             (ts >= dt_from) &
             (ts <= dt_to)
         )
-        .group_by(literal_column("cid"), literal_column("cname"))
+        # группируем РЕАЛЬНЫМИ колонками, не алиасами
+        .group_by(ReceiptItemDB.category_id, ReceiptItemDB.category)
         .order_by(literal_column("total_spent").desc())
     )
-    cat_rows = (await db.execute(cat_q)).all()
+    cat_rows = (await db.execute(cats_q)).all()
 
+    # Товары по категориям (агрегируем по названию продукта)
     items_q = (
         select(
             ReceiptItemDB.category_id.label("cid"),
             ReceiptItemDB.category.label("cname"),
             ProductDB.name.label("name"),
             func.coalesce(func.sum(ReceiptItemDB.price), 0.0).label("total_spent"),
-            func.count(ReceiptItemDB.id).label("purchase_count"),
+            func.count(ReceiptItemDB.id).label("count"),  # <= имя согласовано с чтением ниже
         )
         .join(ReceiptDB, ReceiptDB.id == ReceiptItemDB.receipt_id)
         .join(ProductDB, ProductDB.id == ReceiptItemDB.product_id, isouter=True)
@@ -264,21 +270,23 @@ async def get_month_categories(
             (ts >= dt_from) &
             (ts <= dt_to)
         )
-        .group_by(literal_column("cid"), literal_column("cname"), ProductDB.name)
-        .order_by(literal_column("cid").asc(),literal_column("total_spent").desc())
+        .group_by(ReceiptItemDB.category_id, ReceiptItemDB.category, ProductDB.name)
+        .order_by(ReceiptItemDB.category_id.asc(), literal_column("total_spent").desc())
     )
-    items_rows = (await db.execute(items_q)).all()
+    item_rows = (await db.execute(items_q)).all()
 
-    items_by_cat : Dict[int, List[Dict]] = {}
-    for r in items_rows:
+    # Сгруппируем товары по категориям и применим лимит
+    items_by_cat: Dict[int, List[Dict]] = {}
+    for r in item_rows:
         cid = int(r.cid or 0)
         items_by_cat.setdefault(cid, [])
         items_by_cat[cid].append({
-            "name": r.name or "-",
+            "name": r.name or "—",
             "total_spent": float(r.total_spent or 0),
             "count": int(r.count or 0),
         })
 
+    # финальный список категорий с товарами (сортировка уже по total_spent из SQL)
     categories: List[Dict] = []
     for r in cat_rows:
         cid = int(r.cid or 0)
@@ -288,14 +296,14 @@ async def get_month_categories(
             "total_spent": float(r.total_spent or 0),
             "purchase_count": int(r.purchase_count or 0),
             "avg_item_price": float(r.avg_item_price or 0),
-            "items": (items_by_cat.get(cid, [])[:items_limit]),
+            "items": items_by_cat.get(cid, [])[:items_limit],
         })
 
     return {
         "user_id": uid,
         "month": month,
         "summary": {
-            "total_spent": float(total_spend or 0),
+            "total_spent": float(total_spent or 0),
             "purchase_count": int(purchase_count or 0),
             "avg_ticket": float(avg_ticket or 0),
             "unique_stores": int(unique_stores or 0),
