@@ -21,21 +21,24 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramRetryAfter
 from html import escape
 
-from app.services.GPT import last_check_store
+from app.core.settings import settings
+from app.core.database import SessionLocal
+from app.services.check_store import last_check_store
+from app.services.statistics_summary import fetch_month_statistics, format_month_stats_message
 
 logger = logging.getLogger(__name__)
 
 # ------------ Config ------------
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = settings.TELEGRAM_BOT_TOKEN
 if not TOKEN:
     raise RuntimeError("env TELEGRAM_BOT_TOKEN not set")
 
-API_BASE = os.getenv("API_BASE_URL", "https://mixfom2025.fvds.ru")
-WEBAPP_BASE_URL = os.getenv("WEBAPP_BASE_URL", "https://mixfom2025.fvds.ru")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", f"{API_BASE}/api/telegram/webhook")
-BUILD_VERSION = os.getenv("BUILD_VERSION", "dev")
-INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
+API_BASE = settings.API_BASE_URL
+WEBAPP_BASE_URL = settings.WEBAPP_BASE_URL
+WEBHOOK_URL = settings.WEBHOOK_URL
+BUILD_VERSION = settings.BUILD_VERSION
+INTERNAL_API_SECRET = settings.INTERNAL_API_SECRET
 
 PROCESS_CHECK_URL = f"{API_BASE}/api/bot/process-check"
 SAVE_CHECK_URL = f"{API_BASE}/api/receipts/save-check"
@@ -159,7 +162,7 @@ class TelegramBot:
     async def setup_webhook(self) -> None:
         await self.initialize()
 
-        secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
+        secret = settings.TELEGRAM_WEBHOOK_SECRET
         max_retries = 3
         retry_delay = 2  # начальная задержка в секундах
 
@@ -288,6 +291,22 @@ class TelegramBot:
             reply_markup=reply_keyboard(),
         )
 
+    async def _show_statistics(self, chat_id: int, user_id: int):
+        try:
+            async with SessionLocal() as db:
+                stats = await fetch_month_statistics(db, user_id)
+            text = format_month_stats_message(stats)
+            webapp_url = f"{WEBAPP_BASE_URL}?v={BUILD_VERSION}"
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📱 Подробнее в приложении", web_app=WebAppInfo(url=webapp_url))],
+                ]
+            )
+            await self.bot.send_message(chat_id, text, reply_markup=kb)
+        except Exception:
+            logger.exception("[_show_statistics] failed")
+            await self._send(chat_id, "❌ Не удалось загрузить статистику. Попробуй позже.")
+
     async def _handle_text_buttons(self, message: Message):
         text = (message.text or "").strip().lower()
         if "чек" in text:
@@ -295,9 +314,15 @@ class TelegramBot:
             await message.answer("📸 Пришли фото чека — разберу его 🧮", reply_markup=reply_keyboard())
             await self._schedule_reminder(message.from_user.id)
         elif "статист" in text:
-            await message.answer("📈 Раздел в разработке.", reply_markup=reply_keyboard())
-        elif "команд" in text:
-            await message.answer("Доступно: 🧾 Чек, 📈 Статистика, /save — сохранить последний чек.", reply_markup=reply_keyboard())
+            await self._show_statistics(message.chat.id, message.from_user.id)
+        elif "помощ" in text or "команд" in text:
+            await message.answer(
+                "Доступно:\n"
+                "🧾 Чек — отправь фото чека\n"
+                "📈 Статистика — расходы за текущий месяц\n"
+                "/save — сохранить последний распознанный чек",
+                reply_markup=reply_keyboard(),
+            )
         else:
             await message.answer("Не понял. Нажми кнопку ниже 👇", reply_markup=reply_keyboard())
 
@@ -306,7 +331,7 @@ class TelegramBot:
         try:
             await query.answer()
             if query.data == "stats":
-                await query.message.answer("Эта опция ещё в разработке.", reply_markup=reply_keyboard())
+                await self._show_statistics(query.message.chat.id, user_id)
             elif query.data == "send_receipt":
                 waiting_for_photo.add(user_id)
                 await query.message.answer("📸 Пришли фото чека — разберу его 🧮", reply_markup=reply_keyboard())
@@ -410,7 +435,7 @@ class TelegramBot:
 
             # success → чистим временное
             if user_id in last_check_store:
-                del last_check_store[user_id]
+                clear_staged(user_id)
                 logger.info(f"🧹 [save-bg] Временные данные очищены для user_id={user_id}")
 
             await self._send(chat_id, "✅ Чек сохранён!")

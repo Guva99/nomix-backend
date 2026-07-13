@@ -1,10 +1,12 @@
 from fastapi.responses import StreamingResponse
 import httpx
-import os
 from fastapi import APIRouter, HTTPException
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+from app.core.settings import settings
+
 router = APIRouter()
+
+TELEGRAM_BOT_TOKEN = settings.TELEGRAM_BOT_TOKEN
 
 @router.get("/avatar/{file_path:path}")
 async def proxy_telegram_avatar(file_path: str):

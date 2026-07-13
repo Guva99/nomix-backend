@@ -8,8 +8,9 @@ services:
     environment:
       DATABASE_RETRY_DELAY: ${DATABASE_RETRY_DELAY:-5}
       DATABASE_MAX_RETRIES: ${DATABASE_MAX_RETRIES:-10}
-      API_BASE_URL: https://mixfom2025.fvds.ru
-      WEBHOOK_URL: https://mixfom2025.fvds.ru/api/telegram/webhook
+      API_BASE_URL: ${API_BASE_URL:-https://mixfom2025.fvds.ru}
+      WEBHOOK_URL: ${WEBHOOK_URL:-https://mixfom2025.fvds.ru/api/telegram/webhook}
+      BASE_URL: ${BASE_URL:-https://mixfom2025.fvds.ru}
       TMP_DIR: /app/static/tmp
     command: ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.main:app",
               "-b","0.0.0.0:8000","-w","1","--timeout","60","--graceful-timeout","30"]

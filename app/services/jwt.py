@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Any, Dict
-import os, jwt
+import jwt
 
-JWT_SECRET = os.getenv("JWT_SECRET", "change_me")
+from app.core.settings import settings
+
+JWT_SECRET = settings.JWT_SECRET
 JWT_ALG = "HS256"
-JWT_EXP_MIN = int(os.getenv("JWT_EXP_MIN", "60"))
+JWT_EXP_MIN = settings.JWT_EXP_MIN
 
 def create_access_token(payload: Dict[str, Any], exp_minutes: int = JWT_EXP_MIN) -> str:
     now = datetime.utcnow()

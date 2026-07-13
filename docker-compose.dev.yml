@@ -1,0 +1,44 @@
+# Локальная разработка: docker compose -f docker-compose.dev.yml up --build
+services:
+  backend:
+    build:
+      context: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      API_BASE_URL: http://localhost:8000
+      WEBHOOK_URL: http://localhost:8000/api/telegram/webhook
+      BASE_URL: http://localhost:8000
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./app:/app/app
+      - receipts_data:/app/static/receipts
+      - tmp_data:/app/static/tmp
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    networks: [app-network]
+
+  postgres:
+    image: postgres:15-alpine
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nomix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nomix}
+      POSTGRES_DB: ${POSTGRES_DB:-numix}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks: [app-network]
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  receipts_data:
+  tmp_data:

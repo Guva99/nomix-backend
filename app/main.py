@@ -1,21 +1,24 @@
 import asyncio
 import logging
 import os
-from datetime import datetime
 import time
 import threading
+from datetime import datetime
 
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.core.database import engine, Base
+from app.core.settings import settings
 from app.services.bot import bot
 from app.routers.auth import router as login
 from app.routers.data import router as data
-from app.routers.gpt import router as gpt
+from app.routers.gpt import router as receipt_ai_router
 from app.routers.Checks import router as checks
 from app.routers.products import router as products
 from app.routers.statistics import router as statistics
+from app.routers.avatar import router as avatar
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,16 +38,20 @@ app = FastAPI(
 # Разрешенные домены для CORS
 ALLOWED_ORIGINS = [
     "https://nomix-d6199.web.app",
-    "https://mixfom2025.fvds.ru"
+    "https://mixfom2025.fvds.ru",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
 ]
 
 # Роутеры
 app.include_router(login,    prefix="/api/telegram", tags=["Telegram"])
 app.include_router(data,     prefix="/api/data",     tags=["Database"])
-app.include_router(gpt,      prefix="/api/bot",      tags=["GPT"])
+app.include_router(receipt_ai_router, prefix="/api/bot", tags=["Receipt AI"])
 app.include_router(checks,   prefix="/api/receipts", tags=["Чеки"])
 app.include_router(products, prefix="/api",          tags=["Продукты"])
 app.include_router(statistics, prefix="/api",        tags=["Статистика"])
+app.include_router(avatar,   prefix="/api",          tags=["Avatar"])
 
 _init_lock = threading.Lock()
 _app_initialized = False
@@ -61,8 +68,8 @@ async def on_startup():
 
         _app_initialized = True
 
-    max_retries = int(os.getenv("DATABASE_MAX_RETRIES", "10"))
-    retry_delay = int(os.getenv("DATABASE_RETRY_DELAY", "5"))
+    max_retries = settings.DATABASE_MAX_RETRIES
+    retry_delay = settings.DATABASE_RETRY_DELAY
 
     # Подключение к БД с повторами
     for attempt in range(max_retries):
@@ -91,7 +98,7 @@ async def on_startup():
 
 @app.post("/api/telegram/webhook")
 async def telegram_webhook(req: Request):
-    secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+    secret = settings.TELEGRAM_WEBHOOK_SECRET
     if secret and req.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
         raise HTTPException(status_code=403, detail="Bad secret")
 
@@ -117,10 +124,12 @@ async def health_check():
     """Эндпоинт для проверки работоспособности"""
     try:
         async with engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         return {
             "status": "ok",
             "database": "connected",
+            "gemini_model": settings.GEMINI_MODEL,
+            "version": app.version,
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:

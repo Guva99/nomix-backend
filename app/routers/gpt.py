@@ -5,12 +5,13 @@ import httpx
 from fastapi import APIRouter, HTTPException
 import logging
 from app.models.checkPhoto import PhotoPayload
-from app.services.GPT import analyze_receipt_from_bytes, last_check_store
+from app.services.receipt_ai import analyze_receipt_from_bytes
+from app.services.check_store import set_staged
 
 router = APIRouter()
 
 STATIC_RECEIPT_DIR = "/app/static/receipts"
-TMP_DIR = "/app/static/tmp"
+TMP_DIR = os.getenv("TMP_DIR", "/app/static/tmp")
 os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
 os.makedirs(TMP_DIR, exist_ok=True)
 
@@ -29,37 +30,26 @@ async def process_check(payload: PhotoPayload):
             raise HTTPException(status_code=400, detail=f"Некорректный тип данных: {content_type}")
         image_bytes = resp.content
 
-    # сохраняем во временную папку (НЕ публичную)
     tmp_name = f"user_{payload.user_id}_{int(datetime.utcnow().timestamp())}.jpg"
     tmp_path = os.path.join(TMP_DIR, tmp_name)
     with open(tmp_path, "wb") as f:
         f.write(image_bytes)
     logger.info("💾 [process-check] temp saved: %s", tmp_path)
 
+    try:
+        parsed = await analyze_receipt_from_bytes(image_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    raw = await analyze_receipt_from_bytes(image_bytes)
-
-    if isinstance(raw, str):
-        cleaned = raw.strip()
-        if cleaned.startswith("```json"):
-            cleaned = cleaned.removeprefix("```json").strip()
-        if cleaned.endswith("```"):
-            cleaned = cleaned.removesuffix("```").strip()
-        try:
-            parsed = json.loads(cleaned)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="Ответ GPT не является корректным JSON")
-    else:
-        parsed = raw
-
-    # НИКАКОГО image_url тут — ждём подтверждения
     parsed.pop("image_url", None)
 
-    last_check_store[payload.user_id] = {
+    set_staged(payload.user_id, {
         "receipt": parsed,
         "tmp_name": tmp_name,
         "tmp_path": tmp_path,
-    }
+    })
 
-    logger.info("✅ [process-check] parsed & staged in memory for user_id=%s", payload.user_id)
+    logger.info("✅ [process-check] parsed & staged for user_id=%s", payload.user_id)
     return {"result": parsed}

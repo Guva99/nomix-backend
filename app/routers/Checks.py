@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import os
 import shutil
-from fastapi import APIRouter, Query, HTTPException, Depends, Header
 from datetime import date, datetime, timedelta
+from fastapi import APIRouter, Query, HTTPException, Depends, Header
 
 import logging
+from app.core.settings import settings
 from app.models.db.product import ProductDB
 from app.models.saved_check import SaveReceiptPayload
 from app.core.database import get_db_session
 from app.models.db.receipt import ReceiptDB, ReceiptItemDB
 from app.models.users import UserDB
-from app.services.GPT import analyze_receipt_from_bytes, last_check_store
+from app.services.check_store import last_check_store, clear_staged
 from app.services.jwt import verify_access_token
 from app.deps.auth import get_current_user
 
@@ -23,7 +24,7 @@ router = APIRouter()
 STATIC_RECEIPT_DIR = "/app/static/receipts"
 os.makedirs(STATIC_RECEIPT_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
-BASE_URL = os.getenv("BASE_URL", "https://mixfom2025.fvds.ru")
+BASE_URL = settings.BASE_URL
 
 
 def _get_full_image_url(image_url: str) -> str:
@@ -120,7 +121,7 @@ async def save_check(
             dest_path = os.path.join(STATIC_RECEIPT_DIR, filename)
             try:
                 shutil.move(tmp_path, dest_path)
-                image_url = f"https://mixfom2025.fvds.ru/static/receipts/{filename}"
+                image_url = f"{BASE_URL.rstrip('/')}/static/receipts/{filename}"
                 if payload.user_id in last_check_store:
                     last_check_store[payload.user_id]["image_filename"] = filename
                     last_check_store[payload.user_id]["image_url"] = image_url
